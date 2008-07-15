@@ -1,0 +1,10 @@
+Makefile.PL
+MANIFEST
+Changes
+README
+lib/Data/ParseBinary.pm
+lib/Data/ParseBinary/Adapters.pm
+lib/Data/ParseBinary/Constructs.pm
+lib/Data/ParseBinary/Core.pm
+lib/Data/ParseBinary/Streams.pm
+t/01various.t
