@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.01;
+our $VERSION = 0.02;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -459,9 +459,9 @@ BitStruct must not be inside other BitStruct. use Struct for it.
         )
     );
     $data = $s->parse("\xe1\x1f");
-    # $data is { a => 7, b => 0, bar => { c => 8, d => 31 }}
+    # $data is { a => 7, b => 0, c => 8, bar => { d => 15, e => 1 } }
 
-=head2 Adapters A Validators
+=head2 Adapters And Validators
 
 Adapters are constructs that transform the data that they work on.
 For creating an adapter, the class should inherent from the Data::ParseBinary::Adapter
@@ -499,7 +499,7 @@ And then:
 On additional note, it is possible to declare an "init" sub inside IpAddressAdapter,
 that will receive any extra parameter that "create" recieved. 
 
-One of the built-in Adatpers is Enum:
+One of the built-in Adapters is Enum:
 
     $s = Enum(Byte("protocol"),
         TCP => 6,
@@ -543,21 +543,21 @@ Life isn't always simple. If you only have a rigid structure with constance type
 then you can use other modules, that are far simplier. hack, use pack/unpack.
 
 So if you have more complicate requirements, welcome to the meta-constructs.
-The first on is the field. a Field is a chunk of bytes, with variable lenght:
+The first on is the field. a Field is a chunk of bytes, with variable length:
 
     $s = Struct("foo",
         Byte("length"),
         Field("data", sub { $_->ctx->{length} }),
     );
 
-(it can be also in constent lenght, by replacing the code section with, for example, 4)
-So we have struct, that the first byte is the lenght of the field, and after that the field itself.
+(it can be also in constent length, by replacing the code section with, for example, 4)
+So we have struct, that the first byte is the length of the field, and after that the field itself.
 An example:
 
     $data = $s->parse("\x03ABC");
-    # $data is {lenght => 3, data => "ABC"} 
+    # $data is {length => 3, data => "ABC"} 
     $data = $s->parse("\x04ABCD");
-    # $data is {lenght => 4, data => "ABCD"} 
+    # $data is {length => 4, data => "ABCD"} 
 
 And so on.
 
@@ -748,8 +748,7 @@ A Union. currently work only with primitives, and not on bit-stream.
 
 =head2 LasyBound
 
-This construct is estinental for recoursive constructs. However, I think that it makes
-a circular reference, so be aware.
+This construct is estinental for recoursive constructs.
 
     $s = Struct("foo",
         Flag("has_next"),
@@ -798,8 +797,6 @@ The documentation is just in its beginning
 Union handle only primitives. need to be extended to other constructs, and bit-structs.
 
 Padding/Stream/bitstream duality - need work
-
-use is_deeply in the unit-tests
 
 add the stream object to the parser object? can be usefull with Pointer.
 

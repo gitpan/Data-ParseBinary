@@ -230,8 +230,8 @@ sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $newpos = $self->_getPos($parser);
     my $origpos = $stream->tell();
-    stream->seek($newpos);
-    $self->{subcon}->parse($parser, $stream, $data);
+    $stream->seek($newpos);
+    $self->{subcon}->_build($parser, $stream, $data);
     $stream->seek($origpos);
 }
 
@@ -414,7 +414,7 @@ sub create {
 sub _parse {
     my ($self, $parser, $stream) = @_;
     die "BitStruct can not be nested" if $stream->isBitStream();
-    my $subStream = Data::ParseBinary::BitStream->new($stream);
+    my $subStream = Data::ParseBinary::BitStreamReader->new($stream);
     my $hash = {};
     $parser->push_ctx($hash);
     foreach my $sub (@{ $self->{subs} }) {
@@ -432,14 +432,13 @@ sub _build {
     my ($self, $parser, $stream, $data) = @_;
     die "BitStruct can not be nested" if $stream->isBitStream();
     die "Invalid Struct Value" unless defined $data and ref $data and UNIVERSAL::isa($data, "HASH");
-    my $subStream = Data::ParseBinary::BitStream->new($stream);
+    my $subStream = Data::ParseBinary::BitStreamWriter->new($stream);
     $parser->push_ctx($data);
     foreach my $sub (@{ $self->{subs} }) {
         my $name = $sub->_get_name();
-        die "Struct " . $self->_get_name() . " expects child named $name"
-            unless exists $data->{$name} and defined $data->{$name};
-        $sub->_build($parser, $subStream, $data->{$name});
+       $sub->_build($parser, $subStream, defined $name? $data->{$name} : undef);
     }
+    $subStream->Flush();
     $parser->pop_ctx();
 }
 
@@ -463,7 +462,8 @@ sub _parse {
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    my $string = unpack "B".$self->{length}, $data;
+    my $binaryString = unpack("B32", pack "N", $data);
+    my $string = substr($binaryString, -$self->{length}, $self->{length});
     $stream->WriteBits($string);
 }
 
@@ -736,7 +736,7 @@ sub _build {
     $parser->push_ctx($data);
     foreach my $sub (@{ $self->{subs} }) {
         my $name = $sub->_get_name();
-        $sub->_build($parser, $stream, $data->{$name});
+        $sub->_build($parser, $stream, defined $name? $data->{$name} : undef);
     }
     $parser->pop_ctx();
 }

@@ -3,9 +3,12 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 134;
-#use Test::More qw(no_plan);
+#use Test::More tests => 133;
+use Test::More qw(no_plan);
 $| = 1;
+
+my $data;
+my $string;
 
 ok( UBInt16("foo")->parse("\x01\x02") == 258, "Primitive: Parse: UBInt16");
 ok( ULInt16("foo")->parse("\x01\x02") == 513, "Primitive: Parse: ULInt16");
@@ -17,12 +20,12 @@ my $s = Struct("foo",
     UBInt8("a"),
     SLInt16("b")
 );
-my $hash = $s->parse("\x07\x00\x01");
-ok( 2 == keys %$hash, "Struct: Parse: correct number of keys" );
-ok( ( $hash->{a} == 7 ) && ( $hash->{b} == 256 ) , "Struct: Parse: correct elements");
-ok( $s->build($hash) eq "\x07\x00\x01", "Struct: Build: Rebuild1");
-$hash->{b} = 5000;
-ok( $s->build($hash) eq "\x07\x88\x13", "Struct: Build: Rebuild2");
+$data = {a => 7, b => 256};
+$string = "\x07\x00\x01";
+is_deeply($s->parse($string), $data, "Struct: Parse: correct");
+ok( $s->build($data) eq $string, "Struct: Build: Rebuild1");
+$data->{b} = 5000;
+ok( $s->build($data) eq "\x07\x88\x13", "Struct: Build: Rebuild2");
 
 $s = Struct("foo",
     UBInt8("a"),
@@ -32,21 +35,19 @@ $s = Struct("foo",
         UBInt16("b"),
     )
 );
-$hash = $s->parse("ABBabb");
-ok( 3 == keys %$hash, "Nested Struct: Parse: correct number of keys" );
-ok( ( $hash->{a} == 65 ) && ( $hash->{b} == 16962 ) , "Nested Struct: Parse: correct elements1");
-ok( $hash->{bar} && ref($hash->{bar}) && UNIVERSAL::isa($hash->{bar}, "HASH") , "Nested Struct: Parse: subhash exists");
-ok( 2 == keys %{ $hash->{bar} }, "Nested Struct: Parse: correct number of keys" );
-ok( ( $hash->{bar}->{a} == 97 ) && ( $hash->{bar}->{b} == 25186 ) , "Nested Struct: Parse: correct elements2");
+$data = {a=>65, b=>16962, bar=>{ a=>97, b=> 25186}};
+$string = "ABBabb";
+is_deeply($s->parse($string), $data, "Nested Struct: Parse: correct");
+ok( $s->build($data) eq $string, "Nested Struct: Build: Rebuild1");
 
 $s = Sequence("foo",
     UBInt8("a"),
     UBInt16("b")
 );
-my $list = $s->parse("abb");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "ARRAY") ),  "Sequence: Parse: Returns array-ref");
-ok( @$list == 2 ,  "Sequence: Parse: Returns 2 elements");
-ok(( $list->[0] == 97 and $list->[1] == 25186 ),  "Sequence: Parse: correct data");
+$data = [97, 25186];
+$string = "abb";
+is_deeply($s->parse($string), $data, "Sequence: Parse: correct");
+ok( $s->build($data) eq $string, "Sequence: Build: Rebuild1");
 ok( $s->build([1,2]) eq "\x01\x00\x02", "Sequence: Build: correct");
 
 $s = Sequence("foo",
@@ -57,21 +58,19 @@ $s = Sequence("foo",
         UBInt16("b"),
     )
 );
-$list = $s->parse("ABBabb");
-ok( @$list == 3 ,  "Nested Sequence: Parse: Returns 3 elements");
-ok(( $list->[0] == 65 and $list->[1] == 16962 ),  "Nested Sequence: Parse: correct data 1");
-$list = $list->[2];
-ok(( $list and ref $list and UNIVERSAL::isa($list, "ARRAY") ),  "Nest Sequence: Parse: Returns array-ref");
-ok(( $list->[0] == 97 and $list->[1] == 25186 ),  "Nested Sequence: Parse: correct data 2");
+$data = [65, 16962, [97, 25186]];
+$string = "ABBabb";
+is_deeply($s->parse($string), $data, "Nested Sequence: Parse: correct");
+ok( $s->build($data) eq $string, "Nested Sequence: Build: correct");
 
 $s = Range(3, 7, UBInt8("foo"));
-eval { $list = $s->parse("\x01\x02") };
+eval { $data = $s->parse("\x01\x02") };
 ok( $@ , "Range: Parse: Die on too few elements");
-$list = $s->parse("\x01\x02\x03");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "ARRAY") ),  "Range: Parse: Returns array-ref");
-ok( $list->[2] == 3, "Range: Parse: correct data 1");
-$list = $s->parse("\x01\x02\x03\x04\x05\x06\x07\x08\x09");
-ok( @$list == 7 && $list->[6]==7, "Range: Parse: correct data 2");
+$data = [1..3];
+$string = "\x01\x02\x03";
+is_deeply($s->parse($string), $data, "Range: Parse: correct");
+ok( $s->build($data) eq $string, "Range: Build: correct");
+is_deeply($s->parse("\x01\x02\x03\x04\x05\x06\x07\x08\x09"), [1..7], "Range: Parse: correct data 2");
 eval { $s->build([1,2]) };
 ok( $@ , "Range: Build: Die on too few elements");
 eval { $s->build([1..8]) };
@@ -79,63 +78,68 @@ ok( $@ , "Range: Build: Die on too many elements");
 ok( $s->build([1..7]) eq "\x01\x02\x03\x04\x05\x06\x07" , "Range: Build: correct");
 
 $s = Array(4, UBInt8("foo"));
-$list = $s->parse("\x01\x02\x03\x04");
-ok( @$list == 4 && $list->[3] == 4, "StrictRepeater: Parse: correct elements1");
-eval { $list = $s->parse("\x01\x02\x03") };
+$data = $s->parse("\x01\x02\x03\x04");
+is_deeply( $s->parse("\x01\x02\x03\x04"), [1..4], "StrictRepeater: Parse: correct elements1");
+eval { $data = $s->parse("\x01\x02\x03") };
 ok( $@ , "StrictRepeater: Parse: Die on too few elements");
-$list = $s->parse("\x01\x02\x03\x04\x05");
-ok( @$list == 4 && $list->[3] == 4, "StrictRepeater: Parse: correct elements2");
+is_deeply( $s->parse("\x01\x02\x03\x04\x05"), [1..4], "StrictRepeater: Parse: correct elements2");
 ok( $s->build([5,6,7,8]) eq "\x05\x06\x07\x08", "StrictRepeater: Build: normal build");
 eval { $s->build([5,6,7,8,9]) };
 ok( $@, "StrictRepeater: Build: dies on too many elements");
 
 $s = GreedyRange(UBInt8("foo"));
-$list = $s->parse("\x01");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "ARRAY") ),  "GreedyRange: Parse: Returns array-ref");
-ok( @$list == 1 && $list->[0] == 1, "GreedyRange: Parse: correct elements1");
-$list = $s->parse("\x01\x02\x03");
-ok( @$list == 3 && $list->[2] == 3, "GreedyRange: Parse: correct elements2");
-$list = $s->parse("\x01\x02\x03\x04\x05\x06");
-ok( @$list == 6 && $list->[4] == 5, "GreedyRange: Parse: correct elements3");
-eval { $list = $s->parse("") };
+$data = [1];
+$string = "\x01";
+is_deeply($s->parse($string), $data, "GreedyRange: Parse: correct1");
+ok( $s->build($data) eq $string, "GreedyRange: Build: correct1");
+$data = [1..3];
+$string = "\x01\x02\x03";
+is_deeply($s->parse($string), $data, "GreedyRange: Parse: correct2");
+ok( $s->build($data) eq $string, "GreedyRange: Build: correct2");
+$data = [1..6];
+$string = "\x01\x02\x03\x04\x05\x06";
+is_deeply($s->parse($string), $data, "GreedyRange: Parse: correct3");
+ok( $s->build($data) eq $string, "GreedyRange: Build: correct3");
+eval { $data = $s->parse("") };
 ok( $@ , "GreedyRange: Parse: Die on too few elements");
-ok( $s->build([1,2]) eq "\x01\x02", "GreedyRange: Build: normal build");
 eval{ $s->build([]) };
 ok( $@, "GreedyRange: Build: dies on too few elements");
 
 $s = OptionalGreedyRange(UBInt8("foo"));
-$list = $s->parse("");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "ARRAY") and @$list == 0 ),  "OptionalGreedyRange: Parse: Returns array-ref");
-$list = $s->parse("\x01\x02");
-ok( @$list == 2 && $list->[1] == 2, "OptionalGreedyRange: Parse: correct elements2");
-ok( $s->build([]) eq "", "OptionalGreedyRange: Build: empty build");
-ok( $s->build([1,2]) eq "\x01\x02", "OptionalGreedyRange: Build: normal build");
+$data = [];
+$string = "";
+is_deeply($s->parse($string), $data, "OptionalGreedyRange: Parse: empty");
+ok( $s->build($data) eq $string, "OptionalGreedyRange: Build: empty");
+$data = [1,2];
+$string = "\x01\x02";
+is_deeply($s->parse($string), $data, "OptionalGreedyRange: Parse: normal");
+ok( $s->build($data) eq $string, "OptionalGreedyRange: Build: normal");
 
 $s = Array(5, Array(2, UBInt8("foo")));
-$list = $s->parse("aabbccddee");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "ARRAY") and @$list == 5 ),  "Nested StrictRepeater: Parse: Returns array-ref");
-foreach my $a (@$list) {
-    ok(( $a and ref $a and UNIVERSAL::isa($a, "ARRAY") and @$a == 2 ),  "Nested StrictRepeater: Parse: Nested array-ref");
-}
-ok( $list->[2]->[1] == 99, "Nested StrictRepeater: Parse: Correct elements");
+$data = [[97,97], [98,98], [99,99], [100,100], [101,101]];
+$string = "aabbccddee";
+is_deeply($s->parse($string), $data, "Nested StrictRepeater: Parse: correct");
+ok( $s->build($data) eq $string, "Nested StrictRepeater: Build: correct");
 
 $s = Struct("foo",
     Padding(2),
     Flag("myflag"),
     Padding(5),
 );
-$list = $s->parse("\x00\x00\x01\x00\x00\x00\x00\x00");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "HASH") ),  "Struct with Padding, Flag: Parse: Returns hash-ref");
-ok(( keys %$list == 1 and $list->{myflag} == 1 ), "Struct with Padding, Flag: Parse: correct elements");
+$data = {myflag => 1};
+$string = "\x00\x00\x01\x00\x00\x00\x00\x00";
+is_deeply($s->parse($string), $data, "Struct with Padding, Flag: Parse: correct");
+ok( $s->build($data) eq $string, "Struct with Padding, Flag: Build: correct");
 
 $s = BitStruct("foo",
     Padding(2),
     Flag("myflag"),
     Padding(5),
 );
-$list = $s->parse("\x20");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "HASH") ),  "BitStruct with Padding, Flag: Parse: Returns hash-ref");
-ok(( keys %$list == 1 and $list->{myflag} == 1 ), "BitStruct with Padding, Flag: Parse: correct elements");
+$data = {myflag => 1};
+$string = "\x20";
+is_deeply($s->parse($string), $data, "BitStruct with Padding, Flag: Parse: correct");
+ok( $s->build($data) eq $string, "BitStruct with Padding, Flag: Build: correct");
 
 $s = BitStruct("foo",
     BitField("a", 3),
@@ -144,9 +148,10 @@ $s = BitStruct("foo",
     Nibble("c"),
     BitField("d", 5),
 );
-$list = $s->parse("\xe1\x1f");
-ok(( keys %$list == 4 and $list->{a} == 7 and $list->{b} == 0 ), "BitStruct: Parse: correct elements1");
-ok(( $list->{c} == 8 and $list->{d} == 31 ), "BitStruct: Parse: correct elements2");
+$data = {a=>7, b=>0, c=>8, d=>31};
+$string = "\xe1\x1f";
+is_deeply($s->parse($string), $data, "BitStruct: Parse: correct");
+ok( $s->build($data) eq $string, "BitStruct: Build: correct");
 
 $s = BitStruct("foo",
     BitField("a", 3),
@@ -158,10 +163,20 @@ $s = BitStruct("foo",
         Bit("e"),
     )
 );
-$list = $s->parse("\xe1\x1f");
-ok(( keys %$list == 4 and UNIVERSAL::isa($list->{bar}, "HASH")), "Nested BitStruct: Parse: correct number of elements");
-ok(( $list->{a} == 7 and $list->{b} == 0 and $list->{c} == 8 ), "Nested BitStruct: Parse: correct elements1");
-ok(( $list->{bar}->{d} == 15 and $list->{bar}->{e} == 1 ), "Nested BitStruct: Parse: correct elements2");
+$data = { a=>7, b=>0, c=>8, bar=>{ d=>15, e=>1 } };
+$string = "\xe1\x1f";
+is_deeply($s->parse($string), $data, "Nested BitStruct: Parse: correct");
+ok($s->build($data) eq $string, "Nested BitStruct: Build: correct");
+
+$s = BitStruct("foo",
+    BitField("a", 3),
+    Flag("b"),
+    Byte("c"),
+);
+$data = { a=>7, b=>0, c=>59 };
+$string = "\xe3\xb0";
+is_deeply($s->parse($string), $data, "BitStruct with Byte: Parse: correct");
+ok( $s->build($data) eq $string, "BitStruct with Byte: Build: correct");
 
 $s = Enum(Byte("protocol"),
     TCP => 6,
@@ -201,37 +216,41 @@ ok( $@, "OneOf: Build: blocking");
 ok( NoneOf(UBInt8("foo"), [4,5,6,7])->parse("\x08") == 8, "NoneOf: Parse: passing");
 eval { NoneOf(UBInt8("foo"), [4,5,6,7])->parse("\x06") };
 ok( $@, "NoneOf: Parse: blocking");
+ok( NoneOf(UBInt8("foo"), [4,5,6,7])->build(8) eq "\x08", "NoneOf: Build: passing");
+eval { NoneOf(UBInt8("foo"), [4,5,6,7])->build(6) };
+ok( $@, "NoneOf: Build: blocking");
 
 $s = Struct("foo",
     Byte("length"),
     Field("data", sub { $_->ctx->{length} }),
 );
-$list = $s->parse("\x03ABC");
-ok( $list->{data} eq 'ABC' && $list->{length} == 3, "MetaField: Parse: correct1");
-$list = $s->parse("\x04ABCD");
-ok( $list->{data} eq 'ABCD' && $list->{length} == 4, "MetaField: Parse: correct2");
+$data = {data=> 'ABC', length => 3};
+$string = "\x03ABC";
+is_deeply( $s->parse($string), $data, "MetaField: Parse: correct1");
+ok( $s->build($data) eq $string, "MetaField: Build: correct1");
+$data = {data=> 'ABCD', length => 4};
+$string = "\x04ABCD";
+is_deeply( $s->parse($string), $data, "MetaField: Parse: correct2");
+ok( $s->build($data) eq $string, "MetaField: Build: correct2");
 
 ok( Field("foo", 3)->parse("ABCD") eq "ABC", "Field: Parse: route to StaticField");
 ok( Field("foo", sub {return 3})->parse("ABCD") eq "ABC", "Field: Parse: route to MetaField");
-
 
 $s = Struct("foo",
     Byte("length"),
     Array(sub { $_->ctx->{length}}, UBInt16("data")),
 );
-$list = $s->parse("\x03\x00\x01\x00\x02\x00\x03");
-ok(( $list and ref $list and UNIVERSAL::isa($list, "HASH") and keys %$list == 2 ),  "MetaRepeater: Parse: Struct OK");
-ok(( $list->{length} == 3 and $list->{data} and ref $list->{data}), "MetaRepeater: Parse: Data contains array ref");
-ok(( UNIVERSAL::isa($list->{data}, "ARRAY") and @{ $list->{data} } == 3 ), "MetaRepeater: Parse: Array ref have 3 elements");
-ok(( $list->{data}->[1] == 2 ), "MetaRepeater: Parse: correct value");
+$data = {length => 3, data => [1,2,3]};
+$string = "\x03\x00\x01\x00\x02\x00\x03";
+is_deeply( $s->parse($string), $data, "MetaRepeater: Parse: correct");
+ok( $s->build($data) eq $string, "MetaRepeater: Build: correct");
 
 $s = RepeatUntil(sub {$_->obj eq "\x00"}, Field("data", 1));
-$list = $s->parse("abcdef\x00this is another string");
-my @expected = split '', "abcdef\x00";
-ok( @$list == @expected, "RepeatUntil: Parse: correct number of elements");
-for (0..$#$list) {
-    ok( $expected[$_] eq $list->[$_], "RepeatUntil: Parse: correct element $_");
-}
+$data = [ split('', "abcdef\x00") ];
+$string = "abcdef\x00this is another string";
+is_deeply( $s->parse($string), $data, "RepeatUntil: Parse: correct");
+$string = "abcdef\x00";
+ok( $s->build($data) eq $string, "RepeatUntil: Build: correct");
 
 $s = Struct("foo",
     Enum(Byte("type"),
@@ -249,14 +268,22 @@ $s = Struct("foo",
         }
     )
 );
-$list = $s->parse("\x01\x12");
-ok(( keys %$list == 2 and $list->{type} eq 'INT1' and $list->{data} == 18 ), "Switch: Parse: Correct parse1");
-$list = $s->parse("\x02\x12\x34");
-ok(( keys %$list == 2 and $list->{type} eq 'INT2' and $list->{data} == 4660 ), "Switch: Parse: Correct parse2");
-$list = $s->parse("\x03\x12\x34\x56\x78");
-ok(( keys %$list == 2 and $list->{type} eq 'INT4' and $list->{data} == 305419896 ), "Switch: Parse: Correct parse3");
-$list = $s->parse("\x04abcdef");
-ok(( keys %$list == 2 and $list->{type} eq 'STRING' and $list->{data} eq 'abcdef' ), "Switch: Parse: Correct parse4");
+$data = {type => 'INT1', data => 18};
+$string = "\x01\x12";
+is_deeply( $s->parse($string), $data, "Switch: Parse: correct1");
+ok( $s->build($data) eq $string, "Switch: Build: correct1");
+$data = {type => 'INT2', data => 4660};
+$string = "\x02\x12\x34";
+is_deeply( $s->parse($string), $data, "Switch: Parse: correct2");
+ok( $s->build($data) eq $string, "Switch: Build: correct2");
+$data = {type => 'INT4', data => 305419896};
+$string = "\x03\x12\x34\x56\x78";
+is_deeply( $s->parse($string), $data, "Switch: Parse: correct3");
+ok( $s->build($data) eq $string, "Switch: Build: correct3");
+$data = {type => 'STRING', data => 'abcdef'};
+$string = "\x04abcdef";
+is_deeply( $s->parse($string), $data, "Switch: Parse: correct4");
+ok( $s->build($data) eq $string, "Switch: Build: correct4");
 
 $s = Struct("foo",
     Byte("type"),
@@ -268,12 +295,18 @@ $s = Struct("foo",
         default => UBInt8("spam")
     )
 );
-$list = $s->parse("\x01\xff");
-ok(( keys %$list == 2 and $list->{type} == 1 and $list->{data} == 255 ), "Switch with default: Parse: Correct parse1");
-$list = $s->parse("\x02\xff\xff");
-ok(( keys %$list == 2 and $list->{type} == 2 and $list->{data} == 65535 ), "Switch with default: Parse: Correct parse2");
-$list = $s->parse("\x03\xff\xff");   # <-- uses the default construct
-ok(( keys %$list == 2 and $list->{type} == 3 and $list->{data} == 255 ), "Switch with default: Parse: Correct parse3");
+$data = {type => 1, data => 255};
+$string = "\x01\xff";
+is_deeply( $s->parse($string), $data, "Switch with default: Parse: correct1");
+ok( $s->build($data) eq $string, "Switch with default: Build: correct1");
+$data = {type => 2, data => 65535};
+$string = "\x02\xff\xff";
+is_deeply( $s->parse($string), $data, "Switch with default: Parse: correct2");
+ok( $s->build($data) eq $string, "Switch with default: Build: correct2");
+$data = {type => 3, data => 255};
+$string = "\x03\xff\xff";  # <-- uses the default construct
+is_deeply( $s->parse($string), $data, "Switch with default: Parse: correct3");
+ok( $s->build($data) eq "\x03\xff", "Switch with default: Build: correct3");
 
 $s = Struct("foo",
     Byte("type"),
@@ -285,20 +318,27 @@ $s = Struct("foo",
         default => $DefaultPass,
     )
 );
-$list = $s->parse("\x01\xff");
-ok(( keys %$list == 2 and $list->{type} == 1 and $list->{data} == 255 ), "Switch with pass: Parse: Correct parse1");
-$list = $s->parse("\x02\xff\xff");
-ok(( keys %$list == 2 and $list->{type} == 2 and $list->{data} == 65535 ), "Switch with pass: Parse: Correct parse2");
-$list = $s->parse("\x03\xff\xff");   # <-- uses the default construct
-ok(( keys %$list == 2 and $list->{type} == 3 and exists $list->{data} and not defined $list->{data} ), "Switch with pass: Parse: Correct parse3");
+$data = {type => 1, data => 255};
+$string = "\x01\xff";
+is_deeply( $s->parse($string), $data, "Switch with pass: Parse: correct1");
+ok( $s->build($data) eq $string, "Switch with pass: Build: correct1");
+$data = {type => 2, data => 65535};
+$string = "\x02\xff\xff";
+is_deeply( $s->parse($string), $data, "Switch with pass: Parse: correct2");
+ok( $s->build($data) eq $string, "Switch with pass: Build: correct2");
+$data = {type => 3, data => undef};
+$string = "\x03\xff\xff";  # <-- uses the default construct
+is_deeply( $s->parse($string), $data, "Switch with pass: Parse: correct3");
+ok( $s->build($data) eq "\x03", "Switch with pass: Build: correct3");
 
 $s = Struct("foo",
     Pointer(sub { 4 }, Byte("data1")),   # <-- data1 is at (absolute) position 4
     Pointer(sub { 7 }, Byte("data2")),   # <-- data2 is at (absolute) position 7
 );
-
-$list = $s->parse("\x00\x00\x00\x00\x01\x00\x00\x02");
-ok(( $list->{data1} == 1 and $list->{data2} == 2 ), "Pointer: Parse: Correct"); 
+$data = {data1 => 1, data2=> 2};
+$string = "\x00\x00\x00\x00\x01\x00\x00\x02";
+is_deeply( $s->parse($string), $data, "Pointer: Parse: correct");
+ok( $s->build($data) eq $string, "Pointer: Build: Empty");
 
 $s = Struct("foo",
     Byte("padding_length"),
@@ -307,10 +347,10 @@ $s = Struct("foo",
     Anchor("absolute_position"),
     Pointer(sub { $_->ctx->{absolute_position} + $_->ctx->{relative_offset} }, Byte("data")),
 );
-
-$list = $s->parse("\x05\x00\x00\x00\x00\x00\x03\x00\x00\x00\xff");
-ok(( keys %$list == 4 and $list->{relative_offset} == 3 and $list->{absolute_position} == 7 ), "Pointer n Anchor: Parse: Correct1");
-ok(( $list->{data} == 255 and $list->{padding_length} == 5 ), "Pointer n Anchor: Parse: Correct2");
+$data = {relative_offset=>3, absolute_position=>7, data=>255, padding_length=>5};
+$string = "\x05\x00\x00\x00\x00\x00\x03\x00\x00\x00\xff";
+is_deeply( $s->parse($string), $data, "Pointer n Anchor: Parse: Correct");
+ok(( $s->build($data) eq $string ), "Pointer n Anchor: Build: Correct");
 
 ok(( String("foo", 5)->parse("hello") eq "hello"), "String: Parse: Simple");
 
@@ -341,9 +381,9 @@ $s = Struct("foo",
     Value("total_pixels", sub { $_->ctx->{width} * $_->ctx->{height}}),
 );
 is_deeply( $s->parse("\x05\x05"), { width => 5, height => 5, total_pixels => 25 }, "Value: Parse: Simple");
-$list = { width => 5, height => 5 };
-ok(( $s->build($list) eq "\x05\x05"), "Value: Parse: Ignored");
-is_deeply( $list, { width => 5, height => 5, total_pixels => 25 }, "Value: Parse: Added to hash");
+$data = { width => 5, height => 5 };
+ok(( $s->build($data) eq "\x05\x05"), "Value: Parse: Ignored");
+is_deeply( $data, { width => 5, height => 5, total_pixels => 25 }, "Value: Parse: Added to hash");
 
 $s = Struct("foo",
     Flag("has_options"),
@@ -353,12 +393,17 @@ $s = Struct("foo",
 );
 is_deeply( $s->parse("\x01hello"), {options => 'hello', has_options => 1 }, "If: Parse: True");
 is_deeply( $s->parse("\x00hello"), {options => undef, has_options => 0 }, "If: Parse: False");
+ok(( $s->build({options => undef, has_options => 0 }) eq "\0"), "If: Build: False");
+ok(( $s->build({options => 'hello', has_options => 1 }) eq "\x01hello"), "If: Build: True");
 
 $s = Struct("foo",
     Flag("has_next"),
     If(sub { $_->ctx->{has_next} }, LazyBound("next", sub { $s })),
 );
-is_deeply( $s->parse("\x01\x01\x01\x00"), { has_next => 1, next => { has_next => 1, next => { has_next => 1, next => { has_next => 0, next => undef } } } }, "LazyBound: Parse: Correct");
+$data = { has_next => 1, next => { has_next => 1, next => { has_next => 1, next => { has_next => 0, next => undef } } } };
+$string = "\x01\x01\x01\x00";
+is_deeply( $s->parse($string), $data, "LazyBound: Parse: Correct");
+ok(( $s->build($data) eq $string), "LazyBound: Build: Correct");
 
 $s = Struct("foo",
     Byte("a"),
@@ -366,21 +411,32 @@ $s = Struct("foo",
     Byte("c"),
 );
 is_deeply( $s->parse("\x01\x02"), {a=>1, b=>2, c=>2}, "Peek: Parse: Simple");
+ok(( $s->build({a=>1, b=>222, c=>2}) eq "\x01\x02"), "Peek: Build: Ignored");
 
 $s = Const(Bytes("magic", 6), "FOOBAR");
 ok(($s->parse("FOOBAR") eq "FOOBAR"), "Const: Parse: OK");
 eval { $s->parse("FOOBAX") };
 ok( $@, "Const: Parse: Dies");
+ok(( $s->build("FOOBAR") eq "FOOBAR"), "Const: Build: OK");
+eval { $s->build("FOOBAX") };
+ok( $@, "Const: Build: Dies");
 
-ok(( not defined Terminator()->parse("")), "Terminator: Parse: ok");
-eval { Terminator->parse("x") };
+$s = Terminator();
+ok(( not defined $s->parse("")), "Terminator: Parse: ok");
+eval { $s->parse("x") };
 ok( $@, "Terminator: Parse: dies");
+ok(( $s->build({}) eq ""), "Terminator: Build: Empty");
 
 $s = Struct("foo",
     Byte("a"),
     Alias("b", "a"),
 );
 is_deeply( $s->parse("\x03"), {a=>3, b=>3}, "Alias: Parse: Simple");
+$data = {a=>3};
+ok(( $s->build($data) eq "\x03"), "Alias: Build: OK");
+is_deeply($data, {a=>3, b=>3}, "Alias: Build: Add value");
+$data = {a=>3, b=>5};
+ok(( $s->build($data) eq "\x03"), "Alias: Build: Ignore b");
 
 $s = Union("foo",
     UBInt32("a"),
@@ -391,4 +447,4 @@ ok(( $s->build( { a=> 2864434397 } ) eq "\xaa\xbb\xcc\xdd" ), "Union: Build: a")
 ok(( $s->build( { b => 43707 } ) eq "\xaa\xbb\0\0" ), "Union: Build: b");
 
 
-#print Dumper($list);
+#print Dumper($data);
