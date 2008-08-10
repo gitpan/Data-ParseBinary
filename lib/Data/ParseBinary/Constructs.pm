@@ -1,17 +1,6 @@
-package Data::ParseBinary::Constructs;
-
+package Data::ParseBinary::Union;
 use strict;
 use warnings;
-
-our $DefaultPass = [];
-
-require Exporter;
-our @ISA = qw(Exporter);
-our @EXPORT = qw(
-    $DefaultPass
-);
-
-package Data::ParseBinary::Union;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
 sub create {
@@ -263,7 +252,7 @@ sub create {
     $self->{keyfunc} = $keyfunc;
     $self->{cases} = $cases;
     $self->{default} = $params{default};
-    $self->{default} = Data::ParseBinary::NullConstruct->create() if $self->{default} and $self->{default} == $DefaultPass; 
+    $self->{default} = Data::ParseBinary::NullConstruct->create() if $self->{default} and $self->{default} == $Data::ParseBinary::BaseConstruct::DefaultPass; 
     return $self;
 }
 
@@ -364,8 +353,8 @@ sub _init {
         if ($key eq '_default_') {
             $have_default = 1;
             $default_action = $value;
-            if (ref($default_action) and $default_action == $DefaultPass) {
-                $default_action = $DefaultPass;
+            if (ref($default_action) and $default_action == $Data::ParseBinary::BaseConstruct::DefaultPass) {
+                $default_action = $Data::ParseBinary::BaseConstruct::DefaultPass;
             }
             next;
         }
@@ -384,7 +373,7 @@ sub _decode {
         return $self->{decode}->{$value};
     }
     if ($self->{have_default}) {
-        if (ref($self->{default_action}) and $self->{default_action} == $DefaultPass) {
+        if (ref($self->{default_action}) and $self->{default_action} == $Data::ParseBinary::BaseConstruct::DefaultPass) {
             return $value;
         }
         return $self->{default_action};
@@ -414,7 +403,7 @@ sub create {
 sub _parse {
     my ($self, $parser, $stream) = @_;
     die "BitStruct can not be nested" if $stream->isBitStream();
-    my $subStream = Data::ParseBinary::BitStreamReader->new($stream);
+    my $subStream = Data::ParseBinary::Stream::BitReader->new($stream);
     my $hash = {};
     $parser->push_ctx($hash);
     foreach my $sub (@{ $self->{subs} }) {
@@ -432,7 +421,7 @@ sub _build {
     my ($self, $parser, $stream, $data) = @_;
     die "BitStruct can not be nested" if $stream->isBitStream();
     die "Invalid Struct Value" unless defined $data and ref $data and UNIVERSAL::isa($data, "HASH");
-    my $subStream = Data::ParseBinary::BitStreamWriter->new($stream);
+    my $subStream = Data::ParseBinary::Stream::BitWriter->new($stream);
     $parser->push_ctx($data);
     foreach my $sub (@{ $self->{subs} }) {
         my $name = $sub->_get_name();

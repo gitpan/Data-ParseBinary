@@ -7,4 +7,9 @@ lib/Data/ParseBinary/Adapters.pm
 lib/Data/ParseBinary/Constructs.pm
 lib/Data/ParseBinary/Core.pm
 lib/Data/ParseBinary/Streams.pm
+lib/Data/ParseBinary/Stream/String.pm
+lib/Data/ParseBinary/Stream/StringBuffer.pm
+lib/Data/ParseBinary/Stream/Bit.pm
+lib/Data/ParseBinary/Stream/Warper.pm
 t/01various.t
+t/02streams.t

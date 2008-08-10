@@ -6,6 +6,7 @@ package Data::ParseBinary::BaseConstruct;
 my $not_valid = 0;
 my $string_data = 1;
 my $file_data = 2;
+our $DefaultPass = [];
 
 sub create {
     my ($class, $name) = @_;
@@ -19,7 +20,7 @@ sub _get_name {
 
 sub parse {
     my ($self, $data) = @_;
-    my $stream = Data::ParseBinary::StringStreamReader->new($data);
+    my $stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($data);
     my $parser = Data::ParseBinary::Parser->new();
     return $self->_parse($parser, $stream);
 }
@@ -30,8 +31,8 @@ sub _parse {
 }
 
 sub build {
-    my ($self, $data) = @_;
-    my $stream = Data::ParseBinary::StringStreamWriter->new();
+    my ($self, $data, $source_stream) = @_;
+    my $stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter($source_stream);
     my $parser = Data::ParseBinary::Parser->new();
     $self->_build($parser, $stream, $data);
     return $stream->Flush();

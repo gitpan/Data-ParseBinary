@@ -1,5 +1,11 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.03  August 10, 2008
+    - Worked on the streams (string, stringref, warp, bit)
+	- Created StringBuffer
+	- Added 02streams.t
+	(release on the jawish fest - Tisha Be'av)
+
 0.02  July 22, 2008
 	- A lot of bug fixes, especially in the build op.
 

@@ -3,13 +3,19 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.02;
+our $VERSION = 0.03;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
 use Data::ParseBinary::Streams;
+use Data::ParseBinary::Stream::String;
+use Data::ParseBinary::Stream::Warper;
+use Data::ParseBinary::Stream::Bit;
+use Data::ParseBinary::Stream::StringBuffer;
 use Data::ParseBinary::Constructs;
 
+
+our $DefaultPass = $Data::ParseBinary::BaseConstruct::DefaultPass;
 
 sub UBInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "n") }
 sub UBInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "N") }
@@ -207,6 +213,8 @@ sub Alias {
 }
 
 sub Union { Data::ParseBinary::Union->create(@_) }
+*CreateStreamReader = \&Data::ParseBinary::Stream::Reader::CreateStreamReader;
+*CreateStreamWriter = \&Data::ParseBinary::Stream::Writer::CreateStreamWriter;
 
 require Exporter;
 our @ISA = qw(Exporter);
@@ -284,6 +292,9 @@ our @EXPORT = qw(
     Terminator
     Alias
     Union
+    
+    CreateStreamReader
+    CreateStreamWriter
 );
 
 1;
@@ -770,6 +781,155 @@ This construct is estinental for recoursive constructs.
     #        }
     #    }
 
+=head1 Streams
+
+Until now, everything worked in single-action. build built one construct, and parse
+parsed one construct from one string. But suppose the string have more then one
+construct in it? Suppose we want to write two constructs into one string? (and
+if these constructs are in bit-mode, we can't create and just join them)
+
+So, anyway, we have streams. A stream is an object that let a construct read and
+parse bytes from, or build and write bytes to.
+
+Please note, that some constructs can only work on seekable streams.
+
+=head2 String
+
+is seekable, not bit-stream
+
+This is the most basic stream.
+
+    $data = $s->parse("aabb");
+    # is equivalent to:
+    $stream = CreateStreamReader("aabb");
+    $data = $s->parse($stream);
+    # also equivalent to:
+    $stream = CreateStreamReader(String => "aabb");
+    $data = $s->parse($stream);
+
+Being that String is the default stream type, it is not needed to specify it.
+So, if there is a string contains two or more structs, that the following code is possible:
+
+    $stream = CreateStreamReader(String => $my_string);
+    $data1 = $s1->parse($stream);
+    $data2 = $s2->parse($stream);
+
+The other way is equally possible:
+
+    $stream = CreateStreamWriter(String => undef);
+    $s1->build($data1);
+    $s2->build($data2);
+    $my_string = $stream->Flush();
+
+The Flush command in Writer Stream says: finish doing whatever you do, and return
+your internal object. For string writer it is simply return the string that it built.
+other stream may do more things. (for example, Bit stream, close the last byte, output
+it to the internal stream, and returns that internal stream.)
+
+In creation, the following lines are equvalent:
+
+    $stream = CreateStreamWriter(undef);
+    $stream = CreateStreamWriter('');
+    $stream = CreateStreamWriter(String => undef);
+    $stream = CreateStreamWriter(String => '');
+
+Of course, it is possible to create String Stream with inital string to append to:
+
+    $stream = CreateStreamWriter(String => "aabb");
+
+And any sequencal build operation will append to the "aabb" string.
+
+=head2 StringRef
+
+is seekable, not bit-stream
+
+Mainly for cases when the string is to big to play around with. Writer:
+
+    my $string = '';
+    $stream = CreateStreamWriter(StringRef => \$string);
+    ... do build operations ...
+    # and now the data in $string.
+    # or refer to: ${ $stream->Flush() }
+
+Because Flush returns what's inside the stream - in this case a reference to a string.
+For Reader:
+
+    my $string = 'MBs of data...';
+    $stream = CreateStreamReader(StringRef => \$string);
+    ... parse operations ...
+
+=head2 Bit
+
+not seekable, is bit-stream
+
+While every stream support bit-fields, when requesting 2 bits in non-bit-streams
+you get these two bits, but a whole byte is consumed from the stream. In bit stream,
+only two bits are consumed.
+
+When you use BitStruct construct, it actually warps the current stream wit a bit stream.
+If you try to put BitStruct inside BitStruct, it will fail because warping bit stream
+inside other bit stream isn't logical.
+
+What does it all have to do with you? great question. Support you have a string containing
+a few bit structs, and each struct is aligned to a byte border. Then you can use
+the example under the BitStruct section.
+
+However, if the bit structs are not aligned, but compressed one against the other, then
+you should use:
+
+    $s = Struct("foo",
+        Padding(1),
+        Flag("myflag"),
+        Padding(3),
+    );
+    $inner = "\x42\0";
+    $stream1 = CreateStreamReader(Bit => String => $inner);
+    $data1 = $s->parse($stream1);
+    # data1 is { myflag => 1 }
+    $data2 = $s->parse($stream1);
+    # data2 is { myflag => 1 }
+    $data3 = $s->parse($stream1);
+    # data3 is { myflag => 0 }
+    
+Note that the Padding constructs detects that it work on bit stream, and pad in bits
+instead of bytes.
+
+=head2 StringBuffer
+
+is seekable, not bit-stream
+
+Suppose that you have some non-seekable stream. like socket. and suppose that your
+struct do use construct that need seekable stream. What can you do?
+
+Enter StringBuffer. It reads from the warped stream exactly the number of bytes
+that the struct needs, giving the struct the option to seek inside the read section.
+and if the struct seeks ahead - it will just read enough bytes to seek to this place.
+
+In writer stream, the StringBuffer will pospone writing the data to the actual stream,
+until the Flush command.
+
+This warper stream is usefull only when the struct seek inside it's borders, and
+not sporadically reads data from 30 bytes ahead / back.
+
+    # suppose we have unseekable reader stream names $s_stream
+    # (for example, TCP connection)
+    $stream1 = CreateStreamReader(StringBuffer => $s_stream);
+    # $s is some struct that uses seek. (using Peek, for example)
+    $data = $s->parse($stream1);
+    # the data were read, you can either drop $stream1 or continue use
+    # it for future parses.
+    
+    # now suppose we have a unseekable writer strea name $w_stream
+    $stream1 = CreateStreamWriter(StringBuffer => $w_stream);
+    # $s is some struct that uses seek. (using Peek, for example)
+    $s->build($data1, $stream1); # data is written into $stream1
+    $stream1->Flush(); # data is written to $w_stream
+    $w_stream->Flush(); # data is sent.
+    
+    # second option for the writer stream:
+    $s->build($data1, CreateStreamWriter(StringBuffer => $w_stream))->Flush();
+    $w_stream->Flush(); # data is sent.
+
 =head1 TODO
 
 The following elements were not implemented:
@@ -788,9 +948,12 @@ Convert the original unit tests to Perl (and make them pass...)
 
 A lot of fiddling with the internal
 
-Streams: FileStream, SocketStream, SeekableWarpForSocketStream
+Streams: FileStream, SocketStream
 
-Ability to give the parse function a stream/socket/filehandle instead of string
+Use StringBuffer in Union, eliminating the need for seekable stream
+
+Ability to give the CreateStreamReader/CreateStreamWriter function an ability to reconginze
+socket / filehandle / pointer to string.
 
 The documentation is just in its beginning
 
@@ -808,7 +971,7 @@ This is a pure perl module. there should be not problems.
 
 =head1 BUGS
 
-A lot - see the TODO section
+None known
 
 This is a first release - your feedback will be appreciated.
 
