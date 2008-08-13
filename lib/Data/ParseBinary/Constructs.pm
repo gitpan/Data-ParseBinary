@@ -20,35 +20,47 @@ sub _parse {
     my ($self, $parser, $stream) = @_;
     my $hash = {};
     $parser->push_ctx($hash);
-    my $pos = $stream->tell();
+    my $w_stream = Data::ParseBinary::Stream::StringBufferReader->new($stream);
+    my $pos = $w_stream->tell();
     foreach my $sub (@{ $self->{subcons} }) {
         my $name = $sub->_get_name();
-        my $value = $sub->_parse($parser, $stream);
-        $stream->seek($pos);
+        my $value = $sub->_parse($parser, $w_stream);
+        $w_stream->seek($pos);
         next unless defined $name;
         $hash->{$name} = $value;
     }
-    $stream->ReadBytes($self->{size});
+    $w_stream->ReadBytes($self->{size});
     $parser->pop_ctx();
     return $hash;
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
+    my $s_stream = Data::ParseBinary::Stream::StringWriter->new();
+    my $field_found = 0;
+    my $pos = $s_stream->tell();
     foreach my $sub (@{ $self->{subcons} }) {
         my $name = $sub->_get_name();
         next unless exists $data->{$name} and defined $data->{$name};
-        $sub->_build($parser, $stream, $data->{$name});
-        if ($self->{size} > $sub->_size_of()) {
-            $stream->WriteBytes("\0" x ( $self->{size} - $sub->_size_of() ));
-        }
-        return;
+        $sub->_build($parser, $s_stream, $data->{$name});
+        $s_stream->seek($pos);
+        $field_found = 1;
     }
-    die "Union build error: not found any data";
+    die "Union build error: not found any data" unless $field_found;
+    my $string = $s_stream->Flush();
+    if ($self->{size} > length($string)) {
+        $string .= "\0" x ( $self->{size} - length($string) );
+    }
+    $stream->WriteBytes($string);
+}
+
+sub _size_of {
+    my ($self, $context) = @_;
+    return $self->{size};
 }
 
 package Data::ParseBinary::TunnelAdapter;
-our @ISA = qw{Data::ParseBinary::WarpingConstruct};
+our @ISA = qw{Data::ParseBinary::WrappingConstruct};
 
 sub create {
     my ($class, $subcon, $inner_subcon) = @_;
@@ -73,7 +85,7 @@ sub _build {
 }
 
 package Data::ParseBinary::Peek;
-our @ISA = qw{Data::ParseBinary::WarpingConstruct};
+our @ISA = qw{Data::ParseBinary::WrappingConstruct};
 
 sub create {
     my ($class, $subcon, $perform_build) = @_;
@@ -103,6 +115,12 @@ sub _build {
     }
 }
 
+sub _size_of {
+    my ($self, $context) = @_;
+    # the construct size is 0
+    return 0;
+}
+
 package Data::ParseBinary::Value;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
@@ -127,6 +145,12 @@ sub _parse {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     $parser->ctx->{$self->_get_name()} = $self->_getValue($parser);
+}
+
+sub _size_of {
+    my ($self, $context) = @_;
+    # the construct size is 0
+    return 0;
 }
 
 package Data::ParseBinary::LazyBound;
@@ -175,6 +199,12 @@ sub _build {
     return;
 }
 
+sub _size_of {
+    my ($self, $context) = @_;
+    # the construct size is 0
+    return 0;
+}
+
 package Data::ParseBinary::NullConstruct;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
@@ -186,6 +216,12 @@ sub _parse {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     return;
+}
+
+sub _size_of {
+    my ($self, $context) = @_;
+    # the construct size is 0
+    return 0;
 }
 
 package Data::ParseBinary::Pointer;
@@ -224,6 +260,12 @@ sub _build {
     $stream->seek($origpos);
 }
 
+sub _size_of {
+    my ($self, $context) = @_;
+    # the construct size is 0
+    return 0;
+}
+
 package Data::ParseBinary::Anchor;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
@@ -235,8 +277,14 @@ sub _parse {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $context = $parser->ctx(0);
-    die "Anchor can not be on it's on" unless defined $context;
+    die "Anchor can not be on it's own" unless defined $context;
     $context->{$self->_get_name()} = $stream->tell();
+}
+
+sub _size_of {
+    my ($self, $context) = @_;
+    # the construct size is 0
+    return 0;
 }
 
 package Data::ParseBinary::Switch;
@@ -283,6 +331,23 @@ sub _build {
     return $value->_build($parser, $stream, $data);
 }
 
+sub _size_of {
+    my ($self, $context) = @_;
+    my $size = -1;
+    foreach my $subcon (values %{ $self->{cases} }) {
+        my $sub_size = $subcon->_size_of($context);
+        if ($size == -1) {
+            $size = $sub_size;
+        } else {
+            die "This Switch have dynamic size" unless $size == $sub_size;
+        }
+    }
+    if ($self->{default}) {
+        my $sub_size = $self->{default}->_size_of($context);
+        die "This Switch have dynamic size" unless $size == $sub_size;
+    }
+    return $size;
+}
 
 package Data::ParseBinary::StaticField;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
@@ -304,6 +369,11 @@ sub _build {
     my ($self, $parser, $stream, $data) = @_;
     die "Invalid Value" unless defined $data and not ref $data;
     $stream->WriteBytes($data);
+}
+
+sub _size_of {
+    my ($self, $context) = @_;
+    return $self->{len};
 }
 
 package Data::ParseBinary::MetaField;
@@ -387,48 +457,6 @@ sub _encode {
         return $self->{encode}->{$tvalue};
     }
     die "Enum: unrecognized value $tvalue";
-}
-
-package Data::ParseBinary::BitStruct;
-our @ISA = qw{Data::ParseBinary::BaseConstruct};
-
-sub create {
-    my ($class, $name, @subconstructs) = @_;
-    die "Empty BitStruct is illigal" unless @subconstructs;
-    my $self = $class->SUPER::create($name);
-    $self->{subs} = \@subconstructs;
-    return $self;
-}
-
-sub _parse {
-    my ($self, $parser, $stream) = @_;
-    die "BitStruct can not be nested" if $stream->isBitStream();
-    my $subStream = Data::ParseBinary::Stream::BitReader->new($stream);
-    my $hash = {};
-    $parser->push_ctx($hash);
-    foreach my $sub (@{ $self->{subs} }) {
-        my $name = $sub->_get_name();
-        my $value = $sub->_parse($parser, $subStream);
-        next unless defined $name;
-        $hash->{$name} = $value;
-    }
-    $parser->pop_ctx();
-    return $hash;
-}
-
-
-sub _build {
-    my ($self, $parser, $stream, $data) = @_;
-    die "BitStruct can not be nested" if $stream->isBitStream();
-    die "Invalid Struct Value" unless defined $data and ref $data and UNIVERSAL::isa($data, "HASH");
-    my $subStream = Data::ParseBinary::Stream::BitWriter->new($stream);
-    $parser->push_ctx($data);
-    foreach my $sub (@{ $self->{subs} }) {
-        my $name = $sub->_get_name();
-       $sub->_build($parser, $subStream, defined $name? $data->{$name} : undef);
-    }
-    $subStream->Flush();
-    $parser->pop_ctx();
 }
 
 package Data::ParseBinary::BitField;
@@ -692,6 +720,15 @@ sub _build {
     $parser->pop_ctx();
 }
 
+sub _size_of {
+    my ($self, $context) = @_;
+    my $size = 0;
+    foreach my $sub (@{ $self->{subs} }) {
+        $size += $sub->_size_of($context);
+    }
+    return $size;
+}
+
 package Data::ParseBinary::Struct;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
@@ -728,6 +765,35 @@ sub _build {
         $sub->_build($parser, $stream, defined $name? $data->{$name} : undef);
     }
     $parser->pop_ctx();
+}
+
+sub _size_of {
+    my ($self, $context) = @_;
+    my $size = 0;
+    foreach my $sub (@{ $self->{subs} }) {
+        $size += $sub->_size_of($context);
+    }
+    return $size;
+}
+
+package Data::ParseBinary::BitStruct;
+our @ISA = qw{Data::ParseBinary::Struct};
+
+sub _parse {
+    my ($self, $parser, $stream) = @_;
+    if (not $stream->isBitStream()) {
+        $stream = Data::ParseBinary::Stream::BitReader->new($stream);
+    }
+    return $self->SUPER::_parse($parser, $stream);
+}
+
+
+sub _build {
+    my ($self, $parser, $stream, $data) = @_;
+    if (not $stream->isBitStream()) {
+        $stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter(Bit => Wrap => $stream);
+    }
+    $self->SUPER::_build($parser, $stream, $data);
 }
 
 package Data::ParseBinary::Primitive;

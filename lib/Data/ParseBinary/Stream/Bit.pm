@@ -2,17 +2,15 @@ use strict;
 use warnings;
 
 package Data::ParseBinary::Stream::BitReader;
-our @ISA = qw{Data::ParseBinary::Stream::Reader};
+our @ISA = qw{Data::ParseBinary::Stream::Reader Data::ParseBinary::Stream::WrapperBase};
 
 __PACKAGE__->_registerStreamType("Bit");
 
 sub new {
     my ($class, $byteStream) = @_;
-    my $self = {
-        bs => $byteStream,
-        buffer => '',
-    };
-    return bless $self, $class;
+    my $self = bless { buffer => '' }, $class;
+    $self->_warping($byteStream);
+    return $self;
 }
 
 sub ReadBytes {
@@ -27,7 +25,7 @@ sub ReadBits {
     $moreBitsNeeded = 0 if $moreBitsNeeded < 0;
     my $moreBytesNeeded = int($moreBitsNeeded / 8) + ($moreBitsNeeded % 8 ? 1 : 0);
     #print "BitStream: $bitcount bits requested, $moreBytesNeeded bytes read\n";
-    my $string = $self->{bs}->ReadBytes($moreBytesNeeded);
+    my $string = $self->{ss}->ReadBytes($moreBytesNeeded);
     $current .= unpack "B*", $string;
     my $data = substr($current, 0, $bitcount, '');
     $self->{buffer} = $current;
@@ -48,17 +46,15 @@ sub isBitStream { return 1 };
 
 
 package Data::ParseBinary::Stream::BitWriter;
-our @ISA = qw{Data::ParseBinary::Stream::Writer};
+our @ISA = qw{Data::ParseBinary::Stream::Writer Data::ParseBinary::Stream::WrapperBase};
 
 __PACKAGE__->_registerStreamType("Bit");
 
 sub new {
     my ($class, $byteStream) = @_;
-    my $self = {
-        bs => $byteStream,
-        buffer => '',
-    };
-    return bless $self, $class;
+    my $self = bless { buffer => '' }, $class;
+    $self->_warping($byteStream);
+    return $self;
 }
 
 sub WriteBytes {
@@ -74,14 +70,14 @@ sub WriteBits {
     my $bytesToWrite = substr($new_buffer, 0, $numof_bytesToWrite * 8, '');
     my $binaryToWrite = pack "B".($numof_bytesToWrite * 8), $bytesToWrite;
     $self->{buffer} = $new_buffer;
-    return $self->{bs}->WriteBytes($binaryToWrite);
+    return $self->{ss}->WriteBytes($binaryToWrite);
 }
 
 sub Flush {
     my $self = shift;
     my $write_size = (-length($self->{buffer})) % 8;
     $self->WriteBits('0'x$write_size);
-    return $self->{bs};
+    return $self->{ss}->Flush();
 }
 
 sub tell {

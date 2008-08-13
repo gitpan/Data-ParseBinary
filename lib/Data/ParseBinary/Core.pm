@@ -48,7 +48,7 @@ sub _size_of {
     die "This Construct (".ref($self).") does not know his own size";
 }
 
-package Data::ParseBinary::WarpingConstruct;
+package Data::ParseBinary::WrappingConstruct;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
 sub create {
@@ -73,8 +73,59 @@ sub _build {
     return $self->{subcon}->_build($parser, $stream, $data);
 }
 
+sub _size_of {
+    my ($self, $context) = @_;
+    return $self->{subcon}->_size_of($context);
+}
+
+package Data::ParseBinary::WrappingMultiConstructs;
+our @ISA = qw{Data::ParseBinary::BaseConstruct};
+
+sub create {
+    my ($class, $name, @subcons) = @_;
+    my $self = $class->SUPER::create($name);
+    $self->{subcons} = \@subcons;
+    return $self;
+}
+
+sub _foreach_action {
+    my ($self, $code) = @_;
+    foreach my $sub (@{ $self->{subcons} }) {
+        if ($code) {
+            $self->$code($sub);
+        } else {
+            $self->__action($sub);
+        }
+    }
+}
+
+sub _foreach_parse {
+    my ($self, $parser, $stream, $code) = @_;
+    foreach my $sub (@{ $self->{subcons} }) {
+        my $name = $sub->_get_name();
+        my $value = $sub->_parse($parser, $stream);
+        if ($code) {
+            $self->$code($sub, $name, $value);
+        } else {
+            $self->__parsed($sub, $name, $value);
+        }
+    }
+}
+
+sub _foreach_build {
+    my ($self, $parser, $stream, $data, $code) = @_;
+    foreach my $sub (@{ $self->{subcons} }) {
+        my $name = $sub->_get_name();
+        if ($code) {
+            $self->$code($sub, $name);
+        } else {
+            $self->__builder($sub, $name);
+        }
+    }
+}
+
 package Data::ParseBinary::Adapter;
-our @ISA = qw{Data::ParseBinary::WarpingConstruct};
+our @ISA = qw{Data::ParseBinary::WrappingConstruct};
 
 sub create {
     my ($class, $subcon, @params) = @_;

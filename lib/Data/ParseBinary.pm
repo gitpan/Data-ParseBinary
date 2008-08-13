@@ -3,15 +3,16 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.03;
+our $VERSION = 0.04;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
 use Data::ParseBinary::Streams;
 use Data::ParseBinary::Stream::String;
-use Data::ParseBinary::Stream::Warper;
+use Data::ParseBinary::Stream::Wrapper;
 use Data::ParseBinary::Stream::Bit;
 use Data::ParseBinary::Stream::StringBuffer;
+use Data::ParseBinary::Stream::File;
 use Data::ParseBinary::Constructs;
 
 
@@ -823,8 +824,13 @@ The other way is equally possible:
 
 The Flush command in Writer Stream says: finish doing whatever you do, and return
 your internal object. For string writer it is simply return the string that it built.
-other stream may do more things. (for example, Bit stream, close the last byte, output
-it to the internal stream, and returns that internal stream.)
+Wrapping streams (like Bit, StringBuffer) finish whatever they are doing, flush the
+data to the internal stream, and call Flush on that internal stream.
+
+The special case here is Wrap, that does not call Flush on the internal stream.
+usefull for some configurations.
+a Flush operation happens in the end of every build operation automatically, and
+when a stream being destroyed. 
 
 In creation, the following lines are equvalent:
 
@@ -866,9 +872,8 @@ While every stream support bit-fields, when requesting 2 bits in non-bit-streams
 you get these two bits, but a whole byte is consumed from the stream. In bit stream,
 only two bits are consumed.
 
-When you use BitStruct construct, it actually warps the current stream wit a bit stream.
-If you try to put BitStruct inside BitStruct, it will fail because warping bit stream
-inside other bit stream isn't logical.
+When you use BitStruct construct, it actually wraps the current stream with a bit stream.
+If the stream is already bit-stream, it continues as usual.
 
 What does it all have to do with you? great question. Support you have a string containing
 a few bit structs, and each struct is aligned to a byte border. Then you can use
@@ -877,7 +882,7 @@ the example under the BitStruct section.
 However, if the bit structs are not aligned, but compressed one against the other, then
 you should use:
 
-    $s = Struct("foo",
+    $s = BitStruct("foo",
         Padding(1),
         Flag("myflag"),
         Padding(3),
@@ -893,6 +898,33 @@ you should use:
     
 Note that the Padding constructs detects that it work on bit stream, and pad in bits
 instead of bytes.
+
+On Flush the bit stream write the reminding bits (up to a byte border) as 0,
+write the last byte to the contained stream, and call Flush on the said contained stream.
+so, if we use the $s from the previous code section:
+
+    $stream1 = CreateStreamWriter(Bit => String => undef);
+    $s->build({ myflag => 1 }, $stream1);
+    $s->build({ myflag => 1 }, $stream1);
+    $s->build({ myflag => 0 }, $stream1);
+    my $result = $stream1->Flush();
+    # $result eq "\x40\x40\0"
+
+In this case each build operation did Flush on the bit stream, closing the last
+(and only) byte. so we get three bytes, each contain one record. But if we want
+that our constructs will be compressed each against the other, then we need
+to protect the bit stream from the Flush command:
+
+    $stream1 = CreateStreamWriter(Wrap => Bit => String => undef);
+    $s->build($data1, $stream1);
+    $s->build($data1, $stream1);
+    $s->build($data2, $stream1);
+    my $result = $stream1->Flush()->Flush();
+    # $result eq "\x42\0";
+
+Ohh. Two Flushs. one for the Wrap, one for the Bit and the String.
+However, as you can see, the structs are packed together. The Wrap stream protects
+the Bit stream from the Flush command in the end of every build.
 
 =head2 StringBuffer
 
@@ -922,13 +954,22 @@ not sporadically reads data from 30 bytes ahead / back.
     # now suppose we have a unseekable writer strea name $w_stream
     $stream1 = CreateStreamWriter(StringBuffer => $w_stream);
     # $s is some struct that uses seek. (using Peek, for example)
-    $s->build($data1, $stream1); # data is written into $stream1
-    $stream1->Flush(); # data is written to $w_stream
-    $w_stream->Flush(); # data is sent.
-    
-    # second option for the writer stream:
-    $s->build($data1, CreateStreamWriter(StringBuffer => $w_stream))->Flush();
-    $w_stream->Flush(); # data is sent.
+    $s->build($data1, $stream1);
+    # data is written into $stream1, flushed to $w_stream, and sent.
+
+Note that in StringBuffer, the Flush operation writes the data to the underlining
+stream, and then Flushes that stream.
+
+=head2 Wrap
+
+A simple wraping stream, whose only function is to protect the contained stream
+from Flush commands. Usable only for writer streams, and can be used to:
+
+1. Protect a Bit stream, so it will compress multiple structs without byte alignment
+(see the Bit stream documentation for example)
+
+2. Protect a StringBuffer, so it will aggregate some structs before you will
+Flush them all as one to the socket/file/whatever.
 
 =head1 TODO
 
@@ -940,24 +981,27 @@ The following elements were not implemented:
     Aligned and AlignedStruct
     Probe
     Embed
-    Tunnel
+    Tunnel (TunnelAdapter is already implemented)
 
 Add encodings support for the Strings
 
 Convert the original unit tests to Perl (and make them pass...)
 
-A lot of fiddling with the internal
+Move the insertion of the parsed value to the context from the Struct/Sequence constructs
+to each indevidual construct?
 
-Streams: FileStream, SocketStream
+Write WrappingMultiConstructs base class, and base Struct, Sequence, Union on it.
 
-Use StringBuffer in Union, eliminating the need for seekable stream
+Streams: SocketStream
+
+FileStreamWriter::Flush : improve.
 
 Ability to give the CreateStreamReader/CreateStreamWriter function an ability to reconginze
 socket / filehandle / pointer to string.
 
 The documentation is just in its beginning
 
-Union handle only primitives. need to be extended to other constructs, and bit-structs.
+Union need to be extended to bit-structs?
 
 Padding/Stream/bitstream duality - need work
 

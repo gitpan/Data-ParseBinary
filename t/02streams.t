@@ -76,11 +76,6 @@ $data2 = {myflag => 0};
 is_deeply( $s->parse($stream1), $data1, "BitStruct over StringRef: Parse: First of two");
 is_deeply( $s->parse($stream1), $data2, "BitStruct over StringRef: Parse: Second of two");
 
-$s = Struct("foo",
-    Padding(1),
-    Flag("myflag"),
-    Padding(3),
-);
 $inner = "\x42\0";
 $stream1 = CreateStreamReader(Bit => StringRef => \$inner);
 $data1 = {myflag => 1};
@@ -89,7 +84,15 @@ is_deeply( $s->parse($stream1), $data1, "Continues BitStream: Parse: First of th
 is_deeply( $s->parse($stream1), $data1, "Continues BitStream: Parse: Second of three");
 is_deeply( $s->parse($stream1), $data2, "Continues BitStream: Parse: Third of three");
 
+$inner = "\x40\x40\0";
 $stream1 = CreateStreamWriter(Bit => String => undef);
+$s->build($data1, $stream1);
+$s->build($data1, $stream1);
+$s->build($data2, $stream1);
+ok( $stream1->Flush() eq $inner, "Continues BitStream: Build: OK");
+
+$inner = "\x42\0";
+$stream1 = CreateStreamWriter(Wrap => Bit => String => undef);
 $s->build($data1, $stream1);
 $s->build($data1, $stream1);
 $s->build($data2, $stream1);
@@ -108,7 +111,25 @@ ok( $stream2->tell() == 8, "StringBuffer: Parse: Read the right amount");
 $stream2 = UnseekableWriter->new();
 $stream1 = CreateStreamWriter(StringBuffer => $stream2);
 $inner = "\x00\x00\x00\x00\x01\x00\x00\x02";
-ok( $s->build($data1, $stream1)->Flush()->Flush() eq $inner, "StringBuffer: Build: passed");
+ok( $s->build($data1, $stream1) eq $inner, "StringBuffer: Build: passed");
+
+open my $fh, ">", "t_file_stream.bin" or die "Can not open temp file to write";
+binmode $fh;
+$stream1 = CreateStreamWriter(File => $fh);
+$s->build($data1, $stream1);
+close $fh;
+open $fh, "<", "t_file_stream.bin" or die "Can not open temp file to read";
+binmode $fh;
+{
+    local $/ = undef;
+    my $content = <$fh>;
+    ok($content eq $inner, "File: written OK");
+}
+seek($fh, 0, 0);
+$stream1 = CreateStreamReader(File => $fh);
+is_deeply( $s->parse($stream1), $data1, "File: read OK");
+close $fh;
+unlink "t_file_stream.bin";
 
 
 #print Dumper($data1);
@@ -118,11 +139,9 @@ our @ISA;
 BEGIN { @ISA = qw{Data::ParseBinary::Stream::StringReader} }
 
 sub seek { die "UnseekableReader: seek should not be called" }
-#sub tell { die "UnseekableReader: tell should not be called" }
 
 package UnseekableWriter;
 our @ISA;
 BEGIN { @ISA = qw{Data::ParseBinary::Stream::StringWriter} }
 
 sub seek { die "UnseekableWriter: seek should not be called" }
-#sub tell { die "UnseekableWriter: tell should not be called" }

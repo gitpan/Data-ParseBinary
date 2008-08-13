@@ -1,14 +1,16 @@
 use strict;
 use warnings;
 
-package Data::ParseBinary::Stream::WarperReader;
-our @ISA = qw{Data::ParseBinary::Stream::Reader};
+package Data::ParseBinary::Stream::WrapperReader;
+our @ISA = qw{Data::ParseBinary::Stream::Reader Data::ParseBinary::Stream::WrapperBase};
 
-__PACKAGE__->_registerStreamType("Warp");
+__PACKAGE__->_registerStreamType("Wrap");
 
 sub new {
     my ($class, $sub_stream) = @_;
-    return bless { ss => $sub_stream }, $class;
+    my $self = bless { }, $class;
+    $self->_warping($sub_stream);
+    return $self;
 }
 
 sub ReadBytes { my $self = shift; $self->{ss}->ReadBytes(@_);  }
@@ -17,14 +19,16 @@ sub isBitStream { my $self = shift; $self->{ss}->isBitStream(@_); }
 sub seek { my $self = shift; $self->{ss}->seek(@_); }
 sub tell { my $self = shift; $self->{ss}->tell(@_); }
 
-package Data::ParseBinary::Stream::WarperWriter;
-our @ISA = qw{Data::ParseBinary::Stream::Writer};
+package Data::ParseBinary::Stream::WrapperWriter;
+our @ISA = qw{Data::ParseBinary::Stream::Writer Data::ParseBinary::Stream::WrapperBase};
 
-__PACKAGE__->_registerStreamType("Warp");
+__PACKAGE__->_registerStreamType("Wrap");
 
 sub new {
     my ($class, $sub_stream) = @_;
-    return bless { ss => $sub_stream }, $class;
+    my $self = bless { }, $class;
+    $self->_warping($sub_stream);
+    return $self;
 }
 
 sub WriteBytes { my $self = shift; $self->{ss}->WriteBytes(@_);  }

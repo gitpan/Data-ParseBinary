@@ -2,7 +2,7 @@ use strict;
 use warnings;
 
 package Data::ParseBinary::Stream::StringBufferReader;
-our @ISA = qw{Data::ParseBinary::Stream::StringRefReader};
+our @ISA = qw{Data::ParseBinary::Stream::StringRefReader Data::ParseBinary::Stream::WrapperBase};
 
 __PACKAGE__->_registerStreamType("StringBuffer");
 
@@ -10,7 +10,7 @@ sub new {
     my ($class, $sub_stream) = @_;
     my $string = '';
     my $self = $class->SUPER::new(\$string);
-    $self->{ss} = $sub_stream;
+    $self->_warping($sub_stream);
     return $self;
 }
 
@@ -37,7 +37,7 @@ sub seek {
 }
 
 package Data::ParseBinary::Stream::StringBufferWriter;
-our @ISA = qw{Data::ParseBinary::Stream::StringRefWriter};
+our @ISA = qw{Data::ParseBinary::Stream::StringRefWriter Data::ParseBinary::Stream::WrapperBase};
 
 __PACKAGE__->_registerStreamType("StringBuffer");
 
@@ -45,7 +45,7 @@ sub new {
     my ($class, $sub_stream) = @_;
     my $source = '';
     my $self = $class->SUPER::new(\$source);
-    $self->{ss} = $sub_stream;
+    $self->_warping($sub_stream);
     return $self;
 }
 
@@ -56,7 +56,7 @@ sub Flush {
     my $empty_string = '';
     $self->{data} = \$empty_string;
     $self->{offset} = 0;
-    return $self->{ss};
+    return $self->{ss}->Flush();
 }
 
 

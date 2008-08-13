@@ -43,9 +43,9 @@ sub CreateStreamReader {
             return $_streamTypes{String}->new($source);
         }
         if (UNIVERSAL::isa($source, "Data::ParseBinary::Stream::Reader")) {
-            # if already a SreamWriter - warp it.
-            return $_streamTypes{Warp}->new($source);
+            return $source;
         }
+        die "Got unknown input to CreateStreamReader";
     }
 
     # @params > 1
@@ -58,6 +58,13 @@ sub CreateStreamReader {
         $source = $_streamTypes{$type}->new($source);
     }
     return $source;
+}
+
+sub DESTROY {
+    my $self = shift;
+    if ($self->can("disconnect")) {
+        $self->disconnect();
+    }
 }
 
 package Data::ParseBinary::Stream::Writer;
@@ -102,9 +109,9 @@ sub CreateStreamWriter {
             return $_streamTypes{String}->new($source);
         }
         if (UNIVERSAL::isa($source, "Data::ParseBinary::Stream::Writer")) {
-            # if already a SreamWriter - warp it.
-            return $_streamTypes{Warp}->new($source);
+            return $source;
         }
+        die "Got unknown input to CreateStreamWriter";
     }
 
     # @params > 1
@@ -117,6 +124,37 @@ sub CreateStreamWriter {
         $source = $_streamTypes{$type}->new($source);
     }
     return $source;
+}
+
+sub DESTROY {
+    my $self = shift;
+    $self->Flush();
+    if ($self->can("disconnect")) {
+        $self->disconnect();
+    }
+}
+
+package Data::ParseBinary::Stream::WrapperBase;
+# this is a nixin class for streams that will warp other streams
+
+sub _warping {
+    my ($self, $sub_stream) = @_;
+    if ($sub_stream->{is_warped}) {
+        die "Wrapping Stream " . ref($self) . ": substream is already wraped!";
+    }
+    $self->{ss} = $sub_stream;
+    $sub_stream->{is_wraped} = 1;
+}
+
+sub ss {
+    my $self = shift;
+    return $self->{ss};
+}
+
+sub disconnect {
+    my ($self) = @_;
+    $self->{ss}->{is_wraped} = 0;
+    $self->{ss} = undef;
 }
 
 1;

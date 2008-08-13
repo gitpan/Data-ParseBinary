@@ -1,5 +1,10 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.04  August 13, 2008
+    - Worked on the Streams
+    - Created File Stream
+    - Revisied Flush operation
+
 0.03  August 10, 2008
     - Worked on the streams (string, stringref, warp, bit)
 	- Created StringBuffer
