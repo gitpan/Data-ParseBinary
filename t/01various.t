@@ -3,12 +3,14 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 141;
+use Test::More tests => 157;
 #use Test::More qw(no_plan);
 $| = 1;
 
 my $data;
 my $string;
+my $s;
+my $s1;
 
 ok( UBInt16("foo")->parse("\x01\x02") == 258, "Primitive: Parse: UBInt16");
 ok( ULInt16("foo")->parse("\x01\x02") == 513, "Primitive: Parse: ULInt16");
@@ -16,7 +18,7 @@ ok( UBInt16("foo")->build(31337) eq 'zi', "Primitive: Build: UBInt16");
 ok( SBInt16("foo")->build(-31337) eq "\x85\x97", , "Primitive: Build: SBInt16");
 ok( SLInt16("foo")->build(-31337) eq "\x97\x85", , "Primitive: Build: SLInt16");
 
-my $s = Struct("foo",
+$s = Struct("foo",
     UBInt8("a"),
     SLInt16("b")
 );
@@ -445,6 +447,61 @@ $s = Union("foo",
 is_deeply( $s->parse("\xaa\xbb\xcc\xdd"), { a => 2864434397, b => 43707 }, "Union: Parse: Simple");
 ok(( $s->build( { a=> 2864434397 } ) eq "\xaa\xbb\xcc\xdd" ), "Union: Build: a");
 ok(( $s->build( { b => 43707 } ) eq "\xaa\xbb\0\0" ), "Union: Build: b");
+
+$s = Struct("foo", Aligned(Byte("bbb"), 8), Byte("aaa"));
+$data = { bbb => 99, aaa=>5 };
+$string = "c\0\0\0\0\0\0\0\5";
+is_deeply( $s->parse($string), $data, "Aligned: Parse: Correct");
+ok(( $s->build($data) eq $string), "Aligned: Build: Correct");
+
+$s = Bitwise(Struct("foo",
+    Padding(2),
+    Flag("myflag"),
+    Padding(5),
+));
+$data = {myflag => 1};
+$string = "\x20";
+is_deeply($s->parse($string), $data, "Bitwise eq BitStruct: Parse: correct");
+ok( $s->build($data) eq $string, "Bitwise eq BitStruct: Build: correct");
+
+$s = Struct("foo1",
+    Byte("a"),
+    Select(
+           Const(Byte("b1"), 4),
+           Const(Byte("b2"), 2),
+          ),
+    Byte("c"),
+);
+$s1 = Struct("foo1",
+    Byte("a"),
+    Select(
+           Const(Byte("b1"), 4),
+           Const(Byte("b2"), 2),
+           $DefaultPass,
+          ),
+    Byte("c"),
+);
+$string = "\3\4\xb0";
+$data = { a=>3, b1=>4, c=>176};
+is_deeply($s->parse($string), $data, "Select: Parse: OK1");
+ok( $s->build($data) eq $string, "Select: Build: OK1");
+is_deeply($s1->parse($string), $data, "Select with Pass: Parse: OK1");
+ok( $s1->build($data) eq $string, "Select with Pass: Build: OK1");
+$string = "\3\2\xb0";
+$data = { a=>3, b2=>2, c=>176};
+is_deeply($s->parse($string), $data, "Select: Parse: OK2");
+ok( $s->build($data) eq $string, "Select: Build: OK2");
+is_deeply($s1->parse($string), $data, "Select with Pass: Parse: OK2");
+ok( $s1->build($data) eq $string, "Select with Pass: Build: OK2");
+$string = "\3\3\xb0";
+$data = { a=>3, b2=>3, c=>176};
+eval { $s->parse($string) };
+ok( $@, "Select: Parse: Failed");
+eval { $s->build($data) };
+ok( $@, "Select: Build: Failed");
+$data = { a=>3, c=>3};
+is_deeply($s1->parse($string), $data, "Select with Pass: Parse: Pass");
+ok( $s1->build($data) eq "\3\3", "Select with Pass: Build: Pass");
 
 
 #print Dumper($data);

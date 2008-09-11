@@ -2,6 +2,42 @@ use strict;
 use warnings;
 use Data::ParseBinary::Core;
 
+package Data::ParseBinary::ExtractingAdapter;
+our @ISA = qw{Data::ParseBinary::Adapter};
+
+sub _init {
+    my ($self, $sub_name) = @_;
+    $self->{sub_name} = $sub_name;
+}
+
+sub _decode {
+    my ($self, $value) = @_;
+    return $value->{$self->{sub_name}};
+}
+
+sub _encode {
+    my ($self, $tvalue) = @_;
+    return {$self->{sub_name} => $tvalue};
+}
+
+package Data::ParseBinary::IndexingAdapter;
+our @ISA = qw{Data::ParseBinary::Adapter};
+
+sub _init {
+    my ($self, $index) = @_;
+    $self->{index} = $index || 0;
+}
+
+sub _decode {
+    my ($self, $value) = @_;
+    return $value->[$self->{index}];
+}
+
+sub _encode {
+    my ($self, $tvalue) = @_;
+    return [ ('') x $self->{index}, $tvalue ];
+}
+
 package Data::ParseBinary::JoinAdapter;
 our @ISA = qw{Data::ParseBinary::Adapter};
 
@@ -33,10 +69,10 @@ sub _decode {
 
 sub _encode {
     my ($self, $tvalue) = @_;
-    if (not defined $tvalue or $tvalue eq $self->{value}) {
+    if (defined $tvalue and $tvalue eq $self->{value}) {
         return $self->{value};
     }
-    die "Const Error: expected $self->{value} got $tvalue";
+    die "Const Error: expected $self->{value} got ". (defined $tvalue ? $tvalue : "undef");
 }
 
 

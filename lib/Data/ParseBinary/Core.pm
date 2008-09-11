@@ -6,7 +6,7 @@ package Data::ParseBinary::BaseConstruct;
 my $not_valid = 0;
 my $string_data = 1;
 my $file_data = 2;
-our $DefaultPass = [];
+our $DefaultPass;
 
 sub create {
     my ($class, $name) = @_;
@@ -16,6 +16,17 @@ sub create {
 sub _get_name {
     my $self = shift;
     return $self->{Name};
+}
+
+sub _add_self {
+    my ($self, $parser, $value) = @_;
+    my $name = $self->_get_name();
+    my $ctx = $parser->ctx();
+    if (UNIVERSAL::isa($ctx, "HASH")) {
+        $ctx->{$name} = $value;
+    } elsif (UNIVERSAL::isa($ctx, "ARRAY")) {
+        push @$ctx, $value;
+    }
 }
 
 sub parse {
@@ -76,52 +87,6 @@ sub _build {
 sub _size_of {
     my ($self, $context) = @_;
     return $self->{subcon}->_size_of($context);
-}
-
-package Data::ParseBinary::WrappingMultiConstructs;
-our @ISA = qw{Data::ParseBinary::BaseConstruct};
-
-sub create {
-    my ($class, $name, @subcons) = @_;
-    my $self = $class->SUPER::create($name);
-    $self->{subcons} = \@subcons;
-    return $self;
-}
-
-sub _foreach_action {
-    my ($self, $code) = @_;
-    foreach my $sub (@{ $self->{subcons} }) {
-        if ($code) {
-            $self->$code($sub);
-        } else {
-            $self->__action($sub);
-        }
-    }
-}
-
-sub _foreach_parse {
-    my ($self, $parser, $stream, $code) = @_;
-    foreach my $sub (@{ $self->{subcons} }) {
-        my $name = $sub->_get_name();
-        my $value = $sub->_parse($parser, $stream);
-        if ($code) {
-            $self->$code($sub, $name, $value);
-        } else {
-            $self->__parsed($sub, $name, $value);
-        }
-    }
-}
-
-sub _foreach_build {
-    my ($self, $parser, $stream, $data, $code) = @_;
-    foreach my $sub (@{ $self->{subcons} }) {
-        my $name = $sub->_get_name();
-        if ($code) {
-            $self->$code($sub, $name);
-        } else {
-            $self->__builder($sub, $name);
-        }
-    }
 }
 
 package Data::ParseBinary::Adapter;

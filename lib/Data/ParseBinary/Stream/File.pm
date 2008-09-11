@@ -17,7 +17,10 @@ sub new {
 sub ReadBytes {
     my ($self, $count) = @_;
     my $buf = '';
-    read($self->{handle}, $buf, $count);
+    while ((my $buf_len = length($buf)) < $count) {
+        my $bytes_read = read($self->{handle}, $buf, $count - $buf_len, $buf_len);
+        die "Error: End of file" if $bytes_read == 0;
+    }
     return $buf;
 }
 

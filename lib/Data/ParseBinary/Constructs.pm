@@ -1,4 +1,4 @@
-package Data::ParseBinary::Union;
+package Data::ParseBinary::RoughUnion;
 use strict;
 use warnings;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
@@ -6,13 +6,7 @@ our @ISA = qw{Data::ParseBinary::BaseConstruct};
 sub create {
     my ($class, $name, @subcons) = @_;
     my $self = $class->SUPER::create($name);
-    my $size = $subcons[0]->_size_of();
-    foreach my $sub (@subcons) {
-        my $temp_size = $sub->_size_of();
-        $size = $temp_size if $temp_size > $size;
-    }
     $self->{subcons} = \@subcons;
-    $self->{size} = $size;
     return $self;
 }
 
@@ -34,18 +28,47 @@ sub _parse {
     return $hash;
 }
 
-sub _build {
-    my ($self, $parser, $stream, $data) = @_;
-    my $s_stream = Data::ParseBinary::Stream::StringWriter->new();
+sub _union_build {
+    my ($self, $parser, $string_stream, $data) = @_;
     my $field_found = 0;
-    my $pos = $s_stream->tell();
+    my $pos = $string_stream->tell();
     foreach my $sub (@{ $self->{subcons} }) {
         my $name = $sub->_get_name();
         next unless exists $data->{$name} and defined $data->{$name};
-        $sub->_build($parser, $s_stream, $data->{$name});
-        $s_stream->seek($pos);
+        $sub->_build($parser, $string_stream, $data->{$name});
+        $string_stream->seek($pos);
         $field_found = 1;
     }
+    return $field_found;
+}
+
+sub _build {
+    my ($self, $parser, $stream, $data) = @_;
+    my $s_stream = Data::ParseBinary::Stream::StringWriter->new();
+    my $field_found = $self->_union_build($parser, $s_stream, $data);
+    die "Union build error: not found any data" unless $field_found;
+    $stream->WriteBytes($s_stream->Flush());
+}
+
+package Data::ParseBinary::Union;
+our @ISA = qw{Data::ParseBinary::RoughUnion};
+
+sub create {
+    my ($class, $name, @subcons) = @_;
+    my $self = $class->SUPER::create($name, @subcons);
+    my $size = $subcons[0]->_size_of();
+    foreach my $sub (@subcons) {
+        my $temp_size = $sub->_size_of();
+        $size = $temp_size if $temp_size > $size;
+    }
+    $self->{size} = $size;
+    return $self;
+}
+
+sub _build {
+    my ($self, $parser, $stream, $data) = @_;
+    my $s_stream = Data::ParseBinary::Stream::StringWriter->new();
+    my $field_found = $self->_union_build($parser, $s_stream, $data);
     die "Union build error: not found any data" unless $field_found;
     my $string = $s_stream->Flush();
     if ($self->{size} > length($string)) {
@@ -57,6 +80,85 @@ sub _build {
 sub _size_of {
     my ($self, $context) = @_;
     return $self->{size};
+}
+
+package Data::ParseBinary::Select;
+our @ISA = qw{Data::ParseBinary::BaseConstruct};
+
+sub create {
+    my ($class, @subconstructs) = @_;
+    die "Empty Struct is illigal" unless @subconstructs;
+    my $self = $class->SUPER::create(undef);
+    $self->{subs} = \@subconstructs;
+    return $self;
+}
+
+sub _parse {
+    my ($self, $parser, $stream) = @_;
+    my $orig_pos = $stream->tell();
+    my $upper_hash = $parser->ctx();
+    foreach my $sub (@{ $self->{subs} }) {
+        $stream->seek($orig_pos);
+        my $hash = {};
+        $parser->push_ctx($hash);
+        my $name = $sub->_get_name();
+        my $value;
+        eval {
+            $value = $sub->_parse($parser, $stream);
+        };
+        $parser->pop_ctx();
+        next if $@;
+        $hash->{$name} = $value if defined $name;
+        while (my ($key, $val) = each %$hash) {
+            $upper_hash->{$key} = $val;
+        }
+        return;
+    }
+    die "Problem with Select: no matching option";
+}
+
+
+sub _build {
+    my ($self, $parser, $stream, $data) = @_;
+    my $upper_hash = $parser->ctx();
+    foreach my $sub (@{ $self->{subs} }) {
+        my $hash = { %$upper_hash };
+        my $inter_stream = Data::ParseBinary::Stream::StringWriter->new();
+        $parser->push_ctx($hash);
+        my $name = $sub->_get_name();
+        eval {
+            $sub->_build($parser, $inter_stream, defined $name? $hash->{$name} : undef);
+        };
+        $parser->pop_ctx();
+        next if $@;
+        %$upper_hash = %$hash;
+        $stream->WriteBytes($inter_stream->Flush());
+        return;
+    }
+    die "Problem with Select: no matching option";
+}
+
+package Data::ParseBinary::Restream;
+our @ISA = qw{Data::ParseBinary::WrappingConstruct};
+
+sub create {
+    my ($class, $subcon, $parsing, $building) = @_;
+    my $self = $class->SUPER::create($subcon);
+    $self->{parsing} = $parsing;
+    $self->{building} = $building;
+    return $self;
+}
+
+sub _parse {
+    my ($self, $parser, $stream) = @_;
+    my $sub_stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($self->{parsing} => Wrap => $stream);
+    return $self->{subcon}->_parse($parser, $sub_stream);
+}
+
+sub _build {
+    my ($self, $parser, $stream, $data) = @_;
+    my $sub_stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter($self->{building} => Wrap => $stream);
+    $self->{subcon}->_build($parser, $sub_stream, $data);
 }
 
 package Data::ParseBinary::TunnelAdapter;
@@ -78,7 +180,7 @@ sub _parse {
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    my $inter_stream = Data::ParseBinary::StringStreamWriter->new();
+    my $inter_stream = Data::ParseBinary::Stream::StringWriter->new();
     $self->{inner_subcon}->_build($parser, $inter_stream, $data);
     my $tdata = $inter_stream->Flush();
     $self->{subcon}->_build($parser, $stream, $tdata);
@@ -700,6 +802,7 @@ sub _parse {
     foreach my $sub (@{ $self->{subs} }) {
         my $name = $sub->_get_name();
         my $value = $sub->_parse($parser, $stream);
+        next unless defined $name;
         push @$list, $value;
     }
     $parser->pop_ctx();
@@ -709,13 +812,20 @@ sub _parse {
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
+    my $subs_count = @{ $self->{subs} };
     die "Invalid Sequence Value" unless defined $data and ref $data and UNIVERSAL::isa($data, "ARRAY");
-    die "Invalid Sequence Length" unless @$data == @{ $self->{subs} };
+    die "Invalid Sequence Length" if @$data > $subs_count;
     $parser->push_ctx($data);
     for my $ix (0..$#$data) {
         my $sub = $self->{subs}->[$ix];
         my $name = $sub->_get_name();
-        $sub->_build($parser, $stream, $data->[$ix]);
+        if (defined $name) {
+            die "Invalid Sequence Length" if $ix >= $subs_count;
+            $sub->_build($parser, $stream, $data->[$ix]);
+        } else {
+            $sub->_build($parser, $stream, undef);
+            redo;
+        }
     }
     $parser->pop_ctx();
 }

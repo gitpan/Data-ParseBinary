@@ -3,8 +3,8 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-#use Test::More tests => 141;
-use Test::More qw(no_plan);
+use Test::More tests => 27;
+#use Test::More qw(no_plan);
 $| = 1;
 
 my ($data1, $data2);

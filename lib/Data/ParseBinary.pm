@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.04;
+our $VERSION = 0.05;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -16,7 +16,9 @@ use Data::ParseBinary::Stream::File;
 use Data::ParseBinary::Constructs;
 
 
-our $DefaultPass = $Data::ParseBinary::BaseConstruct::DefaultPass;
+our $DefaultPass = Data::ParseBinary::NullConstruct->create();
+$Data::ParseBinary::BaseConstruct::DefaultPass = $DefaultPass;
+
 
 sub UBInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "n") }
 sub UBInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "N") }
@@ -214,8 +216,65 @@ sub Alias {
 }
 
 sub Union { Data::ParseBinary::Union->create(@_) }
+sub RoughUnion { Data::ParseBinary::RoughUnion->create(@_) }
+
 *CreateStreamReader = \&Data::ParseBinary::Stream::Reader::CreateStreamReader;
 *CreateStreamWriter = \&Data::ParseBinary::Stream::Writer::CreateStreamWriter;
+sub ExtractingAdapter { Data::ParseBinary::ExtractingAdapter->create(@_) };
+
+sub Aligned {
+    my ($subcon, $modulus) = @_;
+    $modulus ||= 4;
+    die "Aligned should be more then 2" if $modulus < 2;
+    my $sub_name = $subcon->_get_name();
+    my $s = ExtractingAdapter(
+        Struct($sub_name,
+               Anchor("Aligned_before"),
+               $subcon,
+               Anchor("Aligned_after"),
+               Padding(sub { ($modulus - (($_->ctx->{Aligned_after} - $_->ctx->{Aligned_before}) % $modulus)) % $modulus })
+              ),
+        $sub_name);
+    return $s;
+}
+
+sub Restream { Data::ParseBinary::Restream->create(@_) }
+sub Bitwise {
+    my ($subcon) = @_;
+    return Restream($subcon, "Bit", "Bit");
+}
+
+my %library_types = (
+    'Graphics-BMP' => "Data::ParseBinary::lib::GraphicsBMP",
+    'Graphics-EMF' => "Data::ParseBinary::lib::GraphicsEMF",
+    'Graphics-PNG' => "Data::ParseBinary::lib::GraphicsPNG",
+    'Graphics-WMF' => "Data::ParseBinary::lib::GraphicsWMF",
+);
+
+sub Library {
+    my $type = pop @_;
+    die "Parse Library: Type not recognized" unless exists $library_types{$type};
+    my $type_name = $library_types{$type};
+    return $type_name if ref $type_name; # already loaded
+    eval qq{ require $type_name; };
+    die $@ if $@;
+    no strict 'refs';
+    my $type_ref = ${$type_name . '::Parser'};
+    $library_types{$type} = $type_ref;
+    return $type_ref;
+}
+
+sub Magic {
+    my ($data) = @_;
+    return Const(Field(undef, length($data)), $data);
+}
+
+sub Select { Data::ParseBinary::Select->create(@_) }
+
+sub Optional {
+    my $subcon = shift;
+    return Select($subcon, $DefaultPass);
+}
 
 require Exporter;
 our @ISA = qw(Exporter);
@@ -293,9 +352,19 @@ our @EXPORT = qw(
     Terminator
     Alias
     Union
+    RoughUnion
     
     CreateStreamReader
     CreateStreamWriter
+    
+    Aligned
+    ExtractingAdapter
+    Restream
+    Bitwise
+    Magic
+    
+    Optional
+    Select
 );
 
 1;
@@ -458,7 +527,7 @@ Padding in BitStruct remove bits from the stream, not bytes.
 
 there is also Octet that is eight bit int.
 
-BitStruct must not be inside other BitStruct. use Struct for it.
+BitStruct can be inside other BitStruct. Inside BitStruct, Struct and BitStruct are equivalents.
 
     $s = BitStruct("foo",
         BitField("a", 3),
@@ -496,8 +565,9 @@ we should write:
 
     my $ipAdapter = IpAddressAdapter->create(Bytes("foo", 4));
 
-(an adapter inherent its name from the underline data construct)
-Or we can create an little function:
+(An adapter inherits its name from the underlying data construct)
+
+Or we can create a little function:
 
     sub IpAddressAdapterFunc {
         my $name = shift;
@@ -971,14 +1041,63 @@ from Flush commands. Usable only for writer streams, and can be used to:
 2. Protect a StringBuffer, so it will aggregate some structs before you will
 Flush them all as one to the socket/file/whatever.
 
+=head2 File
+
+is seekable, not bit-stream
+
+Reads from / Writes to a file. it is your responsebility to open the file and binmode it.
+
+    open my $fh, "<", "bin_data.xdf" or die "oh sh...";
+    binmode $fh;
+    $stream1 = CreateStreamReader(File => $fh);
+
+=head1 Format Library
+
+The Data::ParseBinary arrive with ever-expanding set of pre-defined parser for popular formats.
+And if you have a file-format, then this is how it's done:
+
+    my $bmp_parser = Data::ParseBinary->Library('Graphics-BMP');
+    open my $fh2, "<", $filename or die "can not open $filename";
+    binmode $fh2;
+    $data = $bmp_parser->parse(CreateStreamReader(File => $fh2));
+
+And $data will contain the parsed file. In the same way, it is possible to build a BMP file.
+
+The following explanations just highlight various issues with the various libraries.
+
+=head2 Graphics: BMP
+
+    my $bmp_parser = Data::ParseBinary->Library('Graphics-BMP');
+
+Can parse / build any BMP file, (1, 4, 8 or 24 bit) as long as RLE is not used.
+
+=head2 Graphics: EMF
+
+    my $emf_parser = Data::ParseBinary->Library('Graphics-EMF');
+
+This parser just do not work on my example file. Have to take a look on it.
+
+=head2 Graphics: PNG
+
+    my $png_parser = Data::ParseBinary->Library('Graphics-PNG');
+
+Parses the binay PNG format, however it does not decompress the compressed data.
+Also, it does not compute / verify the CRC values. 
+these actions are left to other layer in the program.
+
+=head2 Graphics: WMF
+
+    my $wmf_parser = Data::ParseBinary->Library('Graphics-WMF');
+
+No issues known.
+
 =head1 TODO
 
 The following elements were not implemented:
 
     OnDemand
-    Optional
     Reconfig and a macro Rename
-    Aligned and AlignedStruct
+    AlignedStruct
     Probe
     Embed
     Tunnel (TunnelAdapter is already implemented)
@@ -987,10 +1106,12 @@ Add encodings support for the Strings
 
 Convert the original unit tests to Perl (and make them pass...)
 
+Fix the Graphics-EMF library
+
+Add documentation to: ExtractingAdapter, RoughUnion, Aligned, Magic, Optional
+
 Move the insertion of the parsed value to the context from the Struct/Sequence constructs
 to each indevidual construct?
-
-Write WrappingMultiConstructs base class, and base Struct, Sequence, Union on it.
 
 Streams: SocketStream
 
@@ -999,15 +1120,15 @@ FileStreamWriter::Flush : improve.
 Ability to give the CreateStreamReader/CreateStreamWriter function an ability to reconginze
 socket / filehandle / pointer to string.
 
-The documentation is just in its beginning
-
 Union need to be extended to bit-structs?
-
-Padding/Stream/bitstream duality - need work
 
 add the stream object to the parser object? can be usefull with Pointer.
 
 use some nice exception system
+
+Find out if the EMF file should work or not. it fails on the statment:
+Const(ULInt32("signature"), 0x464D4520)
+And complain that it gets "0".
 
 =head1 Thread Safety
 
@@ -1016,8 +1137,6 @@ This is a pure perl module. there should be not problems.
 =head1 BUGS
 
 None known
-
-This is a first release - your feedback will be appreciated.
 
 =head1 SEE ALSO
 
