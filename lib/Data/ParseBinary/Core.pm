@@ -7,6 +7,7 @@ my $not_valid = 0;
 my $string_data = 1;
 my $file_data = 2;
 our $DefaultPass;
+my $print_debug_info;
 
 sub create {
     my ($class, $name) = @_;
@@ -31,6 +32,14 @@ sub _add_self {
 
 sub parse {
     my ($self, $data) = @_;
+    {
+        no warnings 'once';
+        if (defined $Data::ParseBinary::print_debug_info) {
+            $print_debug_info = -3;
+        } else {
+            $print_debug_info = undef;
+        }
+    }
     my $stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($data);
     my $parser = Data::ParseBinary::Parser->new();
     return $self->_parse($parser, $stream);
@@ -38,7 +47,23 @@ sub parse {
 
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    die "Bad Shmuel: sub _parse was not implemented for " . ref($self);
+    if (defined $print_debug_info) {
+        $print_debug_info += 3;
+        print " " x $print_debug_info;
+        print "Parsing ", ref($self);
+        my $name = $self->_get_name();
+        print " Named ", (defined $name ? $name : "undef"), "\n";
+    }
+    my $ret = $self->__parse($parser, $stream);
+    if (defined $print_debug_info) {
+        $print_debug_info -= 3;
+    }
+    return $ret;
+}
+
+sub __parse {
+    my ($self, $parser, $stream) = @_;
+    die "Bad Shmuel: sub __parse was not implemented for " . ref($self);
 }
 
 sub build {
@@ -74,7 +99,7 @@ sub subcon {
     return $self->{subcon};
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     return $self->{subcon}->_parse($parser, $stream);
 }
@@ -103,7 +128,7 @@ sub _init {
     my ($self, @params) = @_;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $value = $self->{subcon}->_parse($parser, $stream);
     my $tvalue = $self->_decode($value);

@@ -1,5 +1,17 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.06 September 17, 2008
+	- Add Library modules: Executable-PE32, Executable-ELF32, Data-TermCapture
+	- Add $Data::ParseBinary::print_debug_info
+	- Add Adapters: FlagsEnum
+
+0.05 September 11, 2008
+    - Add Constructs: RoughUnion, Aligned, Restream, Bitwise, Magic, Select, Optional
+    - Add the Library function
+    - Add Library modules: Graphics: BMP, EMF, PNG, WMF.
+    - Add Adapters: ExtractingAdapter, IndexingAdapter
+	(released after my first child's birth)
+
 0.04  August 13, 2008
     - Worked on the Streams
     - Created File Stream
@@ -9,7 +21,7 @@ Revision history for Perl extension Data::ParseBinary.
     - Worked on the streams (string, stringref, warp, bit)
 	- Created StringBuffer
 	- Added 02streams.t
-	(release on the jawish fest - Tisha Be'av)
+	(released on the jawish fest - Tisha Be'av)
 
 0.02  July 22, 2008
 	- A lot of bug fixes, especially in the build op.

@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.05;
+our $VERSION = 0.06;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -18,6 +18,7 @@ use Data::ParseBinary::Constructs;
 
 our $DefaultPass = Data::ParseBinary::NullConstruct->create();
 $Data::ParseBinary::BaseConstruct::DefaultPass = $DefaultPass;
+our $print_debug_info = undef;
 
 
 sub UBInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "n") }
@@ -249,6 +250,9 @@ my %library_types = (
     'Graphics-EMF' => "Data::ParseBinary::lib::GraphicsEMF",
     'Graphics-PNG' => "Data::ParseBinary::lib::GraphicsPNG",
     'Graphics-WMF' => "Data::ParseBinary::lib::GraphicsWMF",
+    'Executable-PE32' => "Data::ParseBinary::lib::ExecPE32",
+    'Executable-ELF32' => "Data::ParseBinary::lib::ExecELF32",
+    'Data-TermCapture' => "Data::ParseBinary::lib::DataCap",
 );
 
 sub Library {
@@ -275,6 +279,8 @@ sub Optional {
     my $subcon = shift;
     return Select($subcon, $DefaultPass);
 }
+
+sub FlagsEnum { Data::ParseBinary::FlagsEnum->create(@_) }
 
 require Exporter;
 our @ISA = qw(Exporter);
@@ -365,6 +371,7 @@ our @EXPORT = qw(
     
     Optional
     Select
+    FlagsEnum
 );
 
 1;
@@ -1091,6 +1098,41 @@ these actions are left to other layer in the program.
 
 No issues known.
 
+=head2 Executable: PE32
+
+    my $exec_pe32 = Data::ParseBinary->Library('Executable-PE32');
+
+Can parse a Windows (and DOS?) EXE and DLL files. However, when building it back,
+there are some minor differences from the original file, and Windows declare that
+it's not a valid Win32 application.
+
+=head2 Executable: ELF32
+
+    my $exec_elf32 = Data::ParseBinary->Library('Executable-ELF32');
+
+Can parse and re-build UNIX "so" files. 
+
+=head2 Data: Term Capture
+
+    my $data_cap = Data::ParseBinary->Library('Data-TermCapture');
+
+Parsing "tcpdump capture file", whatever it is. Please note that this parser
+have a lot of white space. (paddings) So when I rebuild the file, the padded
+area is zeroed, and the re-created file does not match the original file.
+
+I don't know if the recreated file is valid. 
+
+=head1 Debugging
+
+=head2 $print_debug_info
+
+Setting:
+
+    $Data::ParseBinary::print_debug_info = 1;
+
+Will trigger a print every time the parsing process enter or exit a construct.
+So if a parsing dies, you can follow where it did.
+
 =head1 TODO
 
 The following elements were not implemented:
@@ -1129,6 +1171,8 @@ use some nice exception system
 Find out if the EMF file should work or not. it fails on the statment:
 Const(ULInt32("signature"), 0x464D4520)
 And complain that it gets "0".
+
+FlagsEnum: unit-test and document
 
 =head1 Thread Safety
 

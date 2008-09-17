@@ -2,6 +2,41 @@ use strict;
 use warnings;
 use Data::ParseBinary::Core;
 
+package Data::ParseBinary::FlagsEnum;
+our @ISA = qw{Data::ParseBinary::Adapter};
+
+sub _init {
+    my ($self, @mapping) = @_;
+    my @pairs;
+    die "FlagsEnum: Mapping should be even" if @mapping % 2 == 1;
+    while (@mapping) {
+        my $name = shift @mapping;
+        my $value = shift @mapping;
+        push @pairs, [$name, $value];
+    }
+    $self->{pairs} = \@pairs;
+}
+
+sub _decode {
+    my ($self, $value) = @_;
+    my $hash = {};
+    foreach my $rec (@{ $self->{pairs} }) {
+        $hash->{$rec->[0]} = 1 if $value | $rec->[1];
+    }
+    return $hash;
+}
+
+sub _encode {
+    my ($self, $tvalue) = @_;
+    my $value = 0;
+    foreach my $rec (@{ $self->{pairs} }) {
+        if (exists $tvalue->{$rec->[0]} and $tvalue->{$rec->[0]}) {
+            $value |= $rec->[1];
+        }
+    }
+    return $value;
+}
+
 package Data::ParseBinary::ExtractingAdapter;
 our @ISA = qw{Data::ParseBinary::Adapter};
 
@@ -69,6 +104,10 @@ sub _decode {
 
 sub _encode {
     my ($self, $tvalue) = @_;
+    if (not defined $self->_get_name()) {
+        # if we don't have a name, then just use the value
+        return $self->{value};
+    }
     if (defined $tvalue and $tvalue eq $self->{value}) {
         return $self->{value};
     }

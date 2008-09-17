@@ -10,7 +10,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $hash = {};
     $parser->push_ctx($hash);
@@ -93,7 +93,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $orig_pos = $stream->tell();
     my $upper_hash = $parser->ctx();
@@ -149,7 +149,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $sub_stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($self->{parsing} => Wrap => $stream);
     return $self->{subcon}->_parse($parser, $sub_stream);
@@ -171,7 +171,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $inter = $self->{subcon}->_parse($parser, $stream);
     my $inter_stream = Data::ParseBinary::StringStreamReader->new($inter);
@@ -196,7 +196,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $pos = $stream->tell();
     my $res;
@@ -239,7 +239,7 @@ sub _getValue {
     return $self->{func}->();
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     return $self->_getValue($parser);
 }
@@ -274,7 +274,7 @@ sub _getBound {
     return $self->{bound};
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     return $self->_getBound($parser)->_parse($parser, $stream);
 }
@@ -287,7 +287,7 @@ sub _build {
 package Data::ParseBinary::Terminator;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     eval { $stream->ReadBytes(1) };
     if (not $@) {
@@ -310,7 +310,7 @@ sub _size_of {
 package Data::ParseBinary::NullConstruct;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     return;
 }
@@ -343,7 +343,7 @@ sub _getPos {
     $self->{posfunc}->();
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $newpos = $self->_getPos($parser);
     my $origpos = $stream->tell();
@@ -371,7 +371,7 @@ sub _size_of {
 package Data::ParseBinary::Anchor;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     return $stream->tell();
 }
@@ -419,7 +419,7 @@ sub _getCont {
     die "Error at Switch: got un-declared value, and no default was defined";
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $value = $self->_getCont($parser);
     return unless defined $value;
@@ -461,7 +461,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBytes($self->{len});
     return $data;
@@ -495,7 +495,7 @@ sub _getLength {
     return $self->{code}->();
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $len = $self->_getLength($parser);
     my $data = $stream->ReadBytes($len);
@@ -558,6 +558,12 @@ sub _encode {
     if (exists $self->{encode}->{$tvalue}) {
         return $self->{encode}->{$tvalue};
     }
+    if ($self->{have_default}) {
+        if (ref($self->{default_action}) and $self->{default_action} == $Data::ParseBinary::BaseConstruct::DefaultPass) {
+            return $tvalue;
+        }
+        return $self->{default_action};
+    }
     die "Enum: unrecognized value $tvalue";
 }
 
@@ -571,7 +577,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBits($self->{length});
     my $pad_len = 32 - $self->{length};
@@ -607,7 +613,7 @@ sub _getCount {
     $self->{count_code}->();
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     if ($stream->isBitStream()) {
         $stream->ReadBits($self->_getCount($parser));
@@ -649,7 +655,7 @@ sub _shouldStop {
     return $ret;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $list = [];
     $parser->push_ctx($list);
@@ -695,7 +701,7 @@ sub _getLength {
     return $self->{len_code}->();
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $len = $self->_getLength($parser);
     my $list = [];
@@ -736,7 +742,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $list = [];
     $parser->push_ctx($list);
@@ -795,7 +801,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $list = [];
     $parser->push_ctx($list);
@@ -851,7 +857,7 @@ sub create {
 }
 
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $hash = {};
     $parser->push_ctx($hash);
@@ -889,12 +895,12 @@ sub _size_of {
 package Data::ParseBinary::BitStruct;
 our @ISA = qw{Data::ParseBinary::Struct};
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     if (not $stream->isBitStream()) {
         $stream = Data::ParseBinary::Stream::BitReader->new($stream);
     }
-    return $self->SUPER::_parse($parser, $stream);
+    return $self->SUPER::__parse($parser, $stream);
 }
 
 
@@ -917,7 +923,7 @@ sub create {
     return $self;
 }
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBytes($self->{sizeof});
     my $number = unpack $self->{pack_param}, $data;
@@ -939,7 +945,7 @@ sub _size_of {
 package Data::ParseBinary::ReveresedPrimitive;
 our @ISA = qw{Data::ParseBinary::Primitive};
 
-sub _parse {
+sub __parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBytes($self->{sizeof});
     my $r_data = join '', reverse split '', $data;
