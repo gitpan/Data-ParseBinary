@@ -21,7 +21,7 @@ sub _decode {
     my ($self, $value) = @_;
     my $hash = {};
     foreach my $rec (@{ $self->{pairs} }) {
-        $hash->{$rec->[0]} = 1 if $value | $rec->[1];
+        $hash->{$rec->[0]} = 1 if $value & $rec->[1];
     }
     return $hash;
 }

@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.06;
+our $VERSION = 0.07;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -253,6 +253,7 @@ my %library_types = (
     'Executable-PE32' => "Data::ParseBinary::lib::ExecPE32",
     'Executable-ELF32' => "Data::ParseBinary::lib::ExecELF32",
     'Data-TermCapture' => "Data::ParseBinary::lib::DataCap",
+    'FileSystem-MBR' => "Data::ParseBinary::lib::FileSystemMbr",
 );
 
 sub Library {
@@ -618,6 +619,21 @@ And finally:
 
 $DefaultPass tells Enum that if it isn't familiar with the value, pass it alone.
 
+If the field represent a set of flags, then the library provide a construct just for that:
+
+    $s = FlagsEnum(ULInt16("characteristics"),
+        RELOCS_STRIPPED => 0x0001,
+        EXECUTABLE_IMAGE => 0x0002,
+        LINE_NUMS_STRIPPED => 0x0004,
+        REMOVABLE_RUN_FROM_SWAP => 0x0400,
+        BIG_ENDIAN_MACHINE => 0x8000,
+    );
+    $data = $s->parse("\2\4");
+    # $data is { EXECUTABLE_IMAGE => 1, REMOVABLE_RUN_FROM_SWAP => 1 };
+
+Of course, this is equvalent to creating a BitStruct, and specifing Flag-s in the
+correct positions, and so on. but this is an easier way.
+
 We also have Validators. A Validator is an Adapter that instead of transforming data,
 validate it. Examples:
 
@@ -747,6 +763,21 @@ Anchor can help a Pointer to find it's target:
 Anchor saves the current location in the stream, enable the Pointer to jump to location
 relative to it.
 
+Optional construct may or may not be in the stream. Of course, it need a seekable stream.
+The optional section usually have a Const in them, that indicates is this section
+exists. 
+
+    my $wmf_file = Struct("wmf_file",
+        Optional(
+            Struct("placeable_header",
+                Const(ULInt32("key"), 0x9AC6CDD7),
+                ULInt16("handle"),),
+            ),
+        ),
+        ULInt16("version"),
+        ULInt32("size"), # file size is in words
+    );
+
 =head2 Strings
 
 A string with constant length:
@@ -833,7 +864,55 @@ Copies "a" to "b".
     $data = $s->parse("\xaa\xbb\xcc\xdd");
     # $data is { a => 2864434397, b => 43707 }
 
-A Union. currently work only with primitives, and not on bit-stream.
+A Union. currently work only with constant-size constructs, (like primitives, Struct and such)
+but not on bit-stream.
+
+    $s = Struct("records",
+        ULInt32("record_size"),
+        RoughUnion("params",
+            Field("raw", sub { $_->ctx(1)->{record_size} - 8 }),
+            Array(sub { int(($_->ctx(1)->{record_size} - 8) / 4) }, ULInt32("params")),
+        ),
+    );
+
+RoughUnion is a type of Union, that doesn't check the size of it's sub-constructs.
+it is used when we don't know before-hand the size of the sub-constructs, and the size
+of the union as a whole. In the above example, we assume that if the union target is
+the array of integers, then it probably record_size % 4 = 0.
+
+If it's not, and we build this construct from the array, then we will be a few bytes
+short. 
+
+    $s = Struct("bmp",
+        ULInt32("width"),
+        ULInt32("height"),
+        Array(
+            sub { $_->ctx->{height} },
+            Aligned(
+                Array(
+                    sub { $_->ctx(2)->{width} },
+                    Byte("index")
+                ),
+            4),
+        ),
+    );
+
+Aligned make sure that the contained construct's size if dividable by $modulo. the
+syntex is:
+
+    Aligned($subcon, $modulo);
+
+In the above example, we have an excert from the BMP parser. each pixel is a byte.
+There is an array of lines (height) that each line is an array of pixels. each line
+is aligned to a four bytes boundary. 
+
+The modulo can be any number. 2, 4, 8, 7, 23. 
+
+    Magic("\x89PNG\r\n\x1a\n")
+
+A constant string that is written / read and verified to / from the stream.
+For example, every PNG file starts with eight pre-defined bytes. this construct
+handle them, transparant to the calling program.
 
 =head2 LasyBound
 
@@ -1122,6 +1201,13 @@ area is zeroed, and the re-created file does not match the original file.
 
 I don't know if the recreated file is valid. 
 
+=head2 File System: MBR
+
+    my $fs_mbr = Data::ParseBinary->Library('FileSystem-MBR');
+
+Can parse the binary structure of the MBR. (that is the structure that tells your
+computer what partitions exists on the drive) Getting the data from there is your problem.
+
 =head1 Debugging
 
 =head2 $print_debug_info
@@ -1150,7 +1236,7 @@ Convert the original unit tests to Perl (and make them pass...)
 
 Fix the Graphics-EMF library
 
-Add documentation to: ExtractingAdapter, RoughUnion, Aligned, Magic, Optional
+Add documentation to: ExtractingAdapter
 
 Move the insertion of the parsed value to the context from the Struct/Sequence constructs
 to each indevidual construct?
@@ -1171,8 +1257,6 @@ use some nice exception system
 Find out if the EMF file should work or not. it fails on the statment:
 Const(ULInt32("signature"), 0x464D4520)
 And complain that it gets "0".
-
-FlagsEnum: unit-test and document
 
 =head1 Thread Safety
 

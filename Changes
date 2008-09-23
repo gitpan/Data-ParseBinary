@@ -1,5 +1,11 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.07 September 21, 2008
+    - Add Library modules: FileSystem-MBR
+    - Fixed test filename: NOTEPAD.EXE -> notepad.exe
+    - Shortened the cap2.cap to 15kb.
+	- Fixed FlagsEnum
+
 0.06 September 17, 2008
 	- Add Library modules: Executable-PE32, Executable-ELF32, Data-TermCapture
 	- Add $Data::ParseBinary::print_debug_info

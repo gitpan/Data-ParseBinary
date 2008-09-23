@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 157;
+use Test::More tests => 164;
 #use Test::More qw(no_plan);
 $| = 1;
 
@@ -502,6 +502,40 @@ ok( $@, "Select: Build: Failed");
 $data = { a=>3, c=>3};
 is_deeply($s1->parse($string), $data, "Select with Pass: Parse: Pass");
 ok( $s1->build($data) eq "\3\3", "Select with Pass: Build: Pass");
+
+$s = FlagsEnum(ULInt16("characteristics"),
+    RELOCS_STRIPPED => 0x0001,
+    EXECUTABLE_IMAGE => 0x0002,
+    LINE_NUMS_STRIPPED => 0x0004,
+    LOCAL_SYMS_STRIPPED => 0x0008,
+    AGGRESSIVE_WS_TRIM => 0x0010,
+    LARGE_ADDRESS_AWARE => 0x0020,
+    MACHINE_16BIT => 0x0040,
+    BYTES_REVERSED_LO => 0x0080,
+    MACHINE_32BIT => 0x0100,
+    DEBUG_STRIPPED => 0x0200,
+    REMOVABLE_RUN_FROM_SWAP => 0x0400,
+    SYSTEM => 0x1000,
+    DLL => 0x2000,
+    UNIPROCESSOR_ONLY => 0x4000,
+    BIG_ENDIAN_MACHINE => 0x8000,
+);
+$data = {};
+$string = "\0\0";
+is_deeply($s->parse($string), $data, "FlagsEnum: Parse: Empty");
+ok( $s->build($data) eq $string, "FlagsEnum: Build: Empty");
+$data = {EXECUTABLE_IMAGE => 1, REMOVABLE_RUN_FROM_SWAP=>1};
+$string = "\2\4";
+is_deeply($s->parse($string), $data, "FlagsEnum: Parse: Pass");
+ok( $s->build($data) eq $string, "FlagsEnum: Build: Pass");
+
+$string = "PNG";
+$s = Magic($string);
+ok( $s->build({ }) eq $string, "Magic: Build: Pass");
+eval { $s->parse($string) };
+ok( (not $@), "Magic: Parse: OK");
+eval { $s->parse("PXNG") };
+ok( $@, "Magic: Parse: Dies");
 
 
 #print Dumper($data);
