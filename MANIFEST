@@ -36,3 +36,4 @@ t/notepad.exe
 t/python.exe
 t/sqlite3.dll
 t/cap2.cap
+META.yml                                 Module meta-data (added by MakeMaker)
