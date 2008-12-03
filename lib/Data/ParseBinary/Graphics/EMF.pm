@@ -1,4 +1,4 @@
-package Data::ParseBinary::lib::GraphicsEMF;
+package Data::ParseBinary::Graphics::EMF;
 use strict;
 use warnings;
 use Data::ParseBinary;
@@ -157,13 +157,31 @@ my $header_record = Struct("header_record",
     Padding(sub { $_->ctx->{record_size} - 88 }),
 );
 
-my $emf_file = Struct("emf_file",
+our $emf_parser = Struct("emf_file",
     $header_record,
     Array(sub { $_->ctx->{header_record}->{num_of_records} - 1 }, 
         $generic_record
     ),
 );
 
-our $Parser = $emf_file;
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw($emf_parser);
 
 1;
+
+
+__END__
+
+=head1 NAME
+
+Data::ParseBinary::Graphics::EMF
+
+=head1 SYNOPSIS
+
+    use Data::ParseBinary::Graphics::EMF qw{$emf_parser};
+    my $data = $emf_parser->parse(CreateStreamReader(File => $fh));
+
+This parser just do not work on my example file. Have to take a look on it.
+
+=cut

@@ -1,4 +1,4 @@
-package Data::ParseBinary::lib::DataCap;
+package Data::ParseBinary::Data::Cap;
 use strict;
 use warnings;
 use Data::ParseBinary;
@@ -19,12 +19,14 @@ my $packet = Struct("packet",
     Field("data", sub { $_->ctx->{length} }),
 );
 
-my $cap_file = Struct("cap_file",
+our $data_cap_parser = Struct("cap_file",
     Padding(24),
     OptionalGreedyRange($packet),
 );
 
-our $Parser = $cap_file;
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw($data_cap_parser);
 
 package Data::ParseBinary::lib::DataCap::MicrosecAdapter;
 our @ISA;
@@ -59,3 +61,22 @@ sub _encode {
 
 
 1;
+
+__END__
+
+=head1 NAME
+
+Data::ParseBinary::Data::Cap - Parsing "tcpdump capture file"
+
+=head1 SYNOPSIS
+
+    use Data::ParseBinary::Data::Cap qw{$data_cap_parser};
+    my $data = $data_cap_parser->parse(CreateStreamReader(File => $fh));
+
+Parsing "tcpdump capture file", whatever it is. Please note that this parser
+have a lot of white space. (paddings) So when I rebuild the file, the padded
+area is zeroed, and the re-created file does not match the original file.
+
+I don't know if the recreated file is valid. 
+
+=cut

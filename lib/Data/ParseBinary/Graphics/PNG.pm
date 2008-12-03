@@ -1,4 +1,4 @@
-package Data::ParseBinary::lib::GraphicsPNG;
+package Data::ParseBinary::Graphics::PNG;
 use strict;
 use warnings;
 use Data::ParseBinary;
@@ -357,12 +357,31 @@ my $image_header_chunk = Struct("image_header",
 #===============================================================================
 # the complete PNG file
 #===============================================================================
-my $png_file = Struct("png",
+our $png_parser = Struct("png",
     Magic("\x89PNG\r\n\x1a\n"),
     $image_header_chunk,
     GreedyRange($chunk),
 );
 
-our $Parser = $png_file;
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw($png_parser);
 
 1;
+
+__END__
+
+=head1 NAME
+
+Data::ParseBinary::Graphics::PNG
+
+=head1 SYNOPSIS
+
+    use Data::ParseBinary::Graphics::PNG qw{$png_parser};
+    my $data = $png_parser->parse(CreateStreamReader(File => $fh));
+
+Parses the binay PNG format, however it does not decompress the compressed data.
+Also, it does not compute / verify the CRC values. 
+these actions are left to other layer in the program.
+
+=cut

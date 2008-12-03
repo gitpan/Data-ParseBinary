@@ -1,4 +1,4 @@
-package Data::ParseBinary::lib::GraphicsBMP;
+package Data::ParseBinary::Graphics::BMP;
 use strict;
 use warnings;
 use Data::ParseBinary;
@@ -33,7 +33,7 @@ my $uncompressed_pixels = Switch("uncompressed", sub { $_->ctx->{bpp} },
 #===============================================================================
 # file structure
 #===============================================================================
-my $bitmap_file = Struct("bitmap_file",
+our $bmp_parser = Struct("bitmap_file",
     # header
     Const(String("signature", 2), "BM"),
     ULInt32("file_size"),
@@ -86,7 +86,24 @@ my $bitmap_file = Struct("bitmap_file",
     ),
 );
 
-our $Parser = $bitmap_file;
-
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw($bmp_parser);
 
 1;
+
+
+__END__
+
+=head1 NAME
+
+Data::ParseBinary::Graphics::BMP
+
+=head1 SYNOPSIS
+
+    use Data::ParseBinary::Graphics::BMP qw{$bmp_parser};
+    my $data = $bmp_parser->parse(CreateStreamReader(File => $fh));
+
+Can parse / build any BMP file, (1, 4, 8 or 24 bit) as long as RLE is not used.
+
+=cut

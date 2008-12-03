@@ -1,4 +1,4 @@
-package Data::ParseBinary::lib::ExecELF32;
+package Data::ParseBinary::Executable::ELF32;
 use strict;
 use warnings;
 use Data::ParseBinary;
@@ -61,7 +61,7 @@ my $elf32_section_header = Struct("section_header",
     ),
 );
 
-my $elf32_file = Struct("elf32_file",
+our $elf32_parser = Struct("elf32_file",
     Struct("identifier",
         Const(Bytes("magic", 4), "\x7fELF"),
         Enum(Byte("file_class"),
@@ -127,8 +127,26 @@ my $elf32_file = Struct("elf32_file",
     ),
 );
 
-our $Parser = $elf32_file;
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw($elf32_parser);
 
 
 1;
 
+__END__
+
+=head1 NAME
+
+Data::ParseBinary::Executable::ELF32 - Parsing UNIX's SO files
+
+=head1 SYNOPSIS
+
+    use Data::ParseBinary::Executable::ELF32 qw{$elf32_parser};
+    my $data = $elf32_parser->parse(CreateStreamReader(File => $fh));
+
+Can parse and re-build UNIX "so" files.
+
+No known issues
+
+=cut

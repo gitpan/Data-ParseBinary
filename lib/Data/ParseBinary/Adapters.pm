@@ -2,6 +2,69 @@ use strict;
 use warnings;
 use Data::ParseBinary::Core;
 
+package Data::ParseBinary::Enum;
+our @ISA = qw{Data::ParseBinary::Adapter};
+# TODO: implement as macro in terms of SymmetricMapping (macro)
+#   that is implemented as MappingAdapter
+
+sub _init {
+    my ($self, @params) = @_;
+    my $decode = {};
+    my $encode = {};
+    $self->{have_default} = 0;
+    $self->{default_action} = undef;
+    while (@params) {
+        my $key = shift @params;
+        my $value = shift @params;
+        if ($key eq '_default_') {
+            $self->{have_default} = 1;
+            $self->{default_action} = $value;
+            if (ref $value) {
+                if ($value != $Data::ParseBinary::BaseConstruct::DefaultPass) {
+                    die "Enum Error: got invalid value as default";
+                }
+            } elsif (exists $encode->{$value}) {
+                die "Enum Error: $value should not be defined as regular case";
+            } else {
+                $self->{default_value} = shift @params;
+            }
+            next;
+        }
+        $encode->{$key} = $value;
+        $decode->{$value} = $key;
+    }
+    $self->{encode} = $encode;
+    $self->{decode} = $decode;
+}
+
+sub _decode {
+    my ($self, $value) = @_;
+    if (exists $self->{decode}->{$value}) {
+        return $self->{decode}->{$value};
+    }
+    if ($self->{have_default}) {
+        if (ref($self->{default_action}) and $self->{default_action} == $Data::ParseBinary::BaseConstruct::DefaultPass) {
+            return $value;
+        }
+        return $self->{default_action};
+    }
+    die "Enum: unrecognized value $value, and no default defined";
+}
+
+sub _encode {
+    my ($self, $tvalue) = @_;
+    if (exists $self->{encode}->{$tvalue}) {
+        return $self->{encode}->{$tvalue};
+    }
+    if ($self->{have_default}) {
+        if (ref($self->{default_action}) and $self->{default_action} == $Data::ParseBinary::BaseConstruct::DefaultPass) {
+            return $tvalue;
+        }
+        return $self->{default_value};
+    }
+    die "Enum: unrecognized value $tvalue";
+}
+
 package Data::ParseBinary::FlagsEnum;
 our @ISA = qw{Data::ParseBinary::Adapter};
 

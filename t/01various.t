@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 164;
+use Test::More tests => 169;
 #use Test::More qw(no_plan);
 $| = 1;
 
@@ -194,10 +194,12 @@ ok( $s->build("UDP") eq "\x11", "Enum: build 2");
 $s = Enum(Byte("protocol"),
     TCP => 6,
     UDP => 17,
-    _default_ => "blah",
+    _default_ => blah => 99,
 );
 ok( $s->parse("\x11") eq 'UDP', "Enum with default: correct1");
 ok( $s->parse("\x12") eq 'blah', "Enum with default: correct2");
+ok( $s->build("TCP") eq "\x06", "Enum with default: build 1");
+ok( $s->build("blah") eq "\x63", "Enum with default: build default");
 
 $s = Enum(Byte("protocol"),
     TCP => 6,
@@ -207,6 +209,9 @@ $s = Enum(Byte("protocol"),
 ok( $s->parse("\x11") eq 'UDP', "Enum with pass: correct1");
 ok( $s->parse("\x12") == 18, "Enum with pass: correct2");
 ok( $s->parse("\xff") == 255, "Enum with pass: correct3");
+ok( $s->build("TCP") eq "\x06", "Enum with pass: build 1");
+ok( $s->build(18) eq "\x12", "Enum with pass: build 2");
+ok( $s->build(255) eq "\xff", "Enum with pass: build 3");
 
 ok( OneOf(UBInt8("foo"), [4,5,6,7])->parse("\x05") == 5, "OneOf: Parse: passing");
 eval { OneOf(UBInt8("foo"), [4,5,6,7])->parse("\x08") };

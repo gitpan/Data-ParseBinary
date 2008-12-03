@@ -3,11 +3,9 @@ use warnings;
 
 package Data::ParseBinary::BaseConstruct;
 
-my $not_valid = 0;
-my $string_data = 1;
-my $file_data = 2;
 our $DefaultPass;
-my $print_debug_info;
+my $HOOK_BEFORE_ACTION = "HOOK_BEFORE_ACTION";
+my $HOOK_AFTER_ACTION = "HOOK_AFTER_ACTION";
 
 sub create {
     my ($class, $name) = @_;
@@ -19,49 +17,28 @@ sub _get_name {
     return $self->{Name};
 }
 
-sub _add_self {
-    my ($self, $parser, $value) = @_;
-    my $name = $self->_get_name();
-    my $ctx = $parser->ctx();
-    if (UNIVERSAL::isa($ctx, "HASH")) {
-        $ctx->{$name} = $value;
-    } elsif (UNIVERSAL::isa($ctx, "ARRAY")) {
-        push @$ctx, $value;
-    }
-}
-
 sub parse {
     my ($self, $data) = @_;
-    {
-        no warnings 'once';
-        if (defined $Data::ParseBinary::print_debug_info) {
-            $print_debug_info = -3;
-        } else {
-            $print_debug_info = undef;
-        }
-    }
     my $stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($data);
     my $parser = Data::ParseBinary::Parser->new();
-    return $self->_parse($parser, $stream);
+    if (defined $Data::ParseBinary::print_debug_info) {
+        my $tab = 0;
+        my $before = sub {
+            my ($loc_parser, $construct) = @_;
+            print " " x $tab, "Parsing ", $construct->_pretty_name(), "\n";
+            $tab += 3;
+        };
+        my $after = sub {
+            $tab -= 3;
+        };
+        $parser->{$HOOK_BEFORE_ACTION} = [$before];
+        $parser->{$HOOK_AFTER_ACTION} = [$after];
+    }
+    $parser->push_stream($stream);
+    return $parser->_parse($self);
 }
 
 sub _parse {
-    my ($self, $parser, $stream) = @_;
-    if (defined $print_debug_info) {
-        $print_debug_info += 3;
-        print " " x $print_debug_info;
-        print "Parsing ", ref($self);
-        my $name = $self->_get_name();
-        print " Named ", (defined $name ? $name : "undef"), "\n";
-    }
-    my $ret = $self->__parse($parser, $stream);
-    if (defined $print_debug_info) {
-        $print_debug_info -= 3;
-    }
-    return $ret;
-}
-
-sub __parse {
     my ($self, $parser, $stream) = @_;
     die "Bad Shmuel: sub __parse was not implemented for " . ref($self);
 }
@@ -70,8 +47,31 @@ sub build {
     my ($self, $data, $source_stream) = @_;
     my $stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter($source_stream);
     my $parser = Data::ParseBinary::Parser->new();
-    $self->_build($parser, $stream, $data);
+    if (defined $Data::ParseBinary::print_debug_info) {
+        my $tab = 0;
+        my $before = sub {
+            my ($loc_parser, $construct, $data) = @_;
+            print " " x $tab, "Building ", _pretty_name($construct), "\n";
+            $tab += 3;
+        };
+        my $after = sub {
+            $tab -= 3;
+        };
+        $parser->{$HOOK_BEFORE_ACTION} = [$before];
+        $parser->{$HOOK_AFTER_ACTION} = [$after];
+    }
+    $parser->push_stream($stream);
+    $parser->_build($self, $data);
     return $stream->Flush();
+}
+
+sub _pretty_name {
+    my ($self) = @_;    
+    my $name = $self->_get_name();
+    my $type = ref $self;
+    $type =~ s/^Data::ParseBinary:://;
+    $name ||= "<unnamed>";
+    return "$type $name";
 }
 
 sub _build {
@@ -99,14 +99,14 @@ sub subcon {
     return $self->{subcon};
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
-    return $self->{subcon}->_parse($parser, $stream);
+    return $parser->_parse($self->{subcon});
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    return $self->{subcon}->_build($parser, $stream, $data);
+    return $parser->_build($self->{subcon}, $data);
 }
 
 sub _size_of {
@@ -128,9 +128,9 @@ sub _init {
     my ($self, @params) = @_;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
-    my $value = $self->{subcon}->_parse($parser, $stream);
+    my $value = $self->SUPER::_parse($parser, $stream);
     my $tvalue = $self->_decode($value);
     return $tvalue;
 }
@@ -138,7 +138,7 @@ sub __parse {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $value = $self->_encode($data);
-    $self->{subcon}->_build($parser, $stream, $value);
+    $self->SUPER::_build($parser, $stream, $value);
 }
 
 sub _decode {
@@ -207,6 +207,64 @@ sub push_ctx {
 sub pop_ctx {
     my $self = shift;
     return shift @{ $self->{ctx} };
+}
+
+sub push_stream {
+    my ($self, $new_stream) = @_;
+    unshift @{ $self->{streams} }, $new_stream;
+}
+
+sub pop_stream {
+    my $self = shift;
+    return shift @{ $self->{streams} };
+}
+
+sub _build {
+    my ($self, $construct, $data) = @_;
+    my $streams_count = @{ $self->{streams} };
+    if (exists $self->{$HOOK_BEFORE_ACTION}) {
+        foreach my $hba ( @{ $self->{$HOOK_BEFORE_ACTION} } ) {
+            $hba->($self, $construct, $data);
+        }
+    }
+
+    $construct->_build($self, $self->{streams}->[0], $data);
+
+    if (exists $self->{$HOOK_AFTER_ACTION}) {
+        foreach my $hba ( @{ $self->{$HOOK_AFTER_ACTION} } ) {
+            $hba->($self, $construct, undef);
+        }
+    }
+    if ($streams_count < @{ $self->{streams} }) {
+        splice( @{ $self->{streams} }, 0, @{ $self->{streams} } - $streams_count, ());
+    }
+}
+
+sub _parse {
+    my ($self, $construct) = @_;
+    my $streams_count = @{ $self->{streams} };
+    if (exists $self->{$HOOK_BEFORE_ACTION}) {
+        foreach my $hba ( @{ $self->{$HOOK_BEFORE_ACTION} } ) {
+            $hba->($self, $construct, undef);
+        }
+    }
+
+    my $data = $construct->_parse($self, $self->{streams}->[0]);
+
+    if (exists $self->{$HOOK_AFTER_ACTION}) {
+        foreach my $hba ( @{ $self->{$HOOK_AFTER_ACTION} } ) {
+            $hba->($self, $construct, $data);
+        }
+    }
+    if ($streams_count < @{ $self->{streams} }) {
+        splice( @{ $self->{streams} }, 0, @{ $self->{streams} } - $streams_count, ());
+    }
+    return $data;
+}
+
+sub throw {
+    my ($self, $msg) = @_;
+    die $msg;
 }
 
 1;

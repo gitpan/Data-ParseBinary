@@ -1,4 +1,4 @@
-package Data::ParseBinary::lib::GraphicsWMF;
+package Data::ParseBinary::Graphics::WMF;
 use strict;
 use warnings;
 use Data::ParseBinary;
@@ -64,7 +64,7 @@ my $wmf_placeable_header = Struct("placeable_header",
   ULInt16("checksum")
 );
 
-my $wmf_file = Struct("wmf_file",
+our $wmf_parser = Struct("wmf_file",
     # --- optional placeable header ---
     Optional($wmf_placeable_header),
     
@@ -84,9 +84,25 @@ my $wmf_file = Struct("wmf_file",
     GreedyRange($wmf_record)
 );
 
-
-our $Parser = $wmf_file;
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw($wmf_parser);
 
 1;
 
+__END__
 
+=head1 NAME
+
+Data::ParseBinary::Graphics::WMF
+
+=head1 SYNOPSIS
+
+    use Data::ParseBinary::Graphics::WMF qw{$wmf_parser};
+    my $data = $wmf_parser->parse(CreateStreamReader(File => $fh));
+
+Parsing the WMF Graphic format files
+
+No known issues
+
+=cut

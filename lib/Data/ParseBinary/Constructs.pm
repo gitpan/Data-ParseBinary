@@ -10,15 +10,16 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $hash = {};
     $parser->push_ctx($hash);
     my $w_stream = Data::ParseBinary::Stream::StringBufferReader->new($stream);
+    $parser->push_stream($w_stream);
     my $pos = $w_stream->tell();
     foreach my $sub (@{ $self->{subcons} }) {
         my $name = $sub->_get_name();
-        my $value = $sub->_parse($parser, $w_stream);
+        my $value = $parser->_parse($sub);
         $w_stream->seek($pos);
         next unless defined $name;
         $hash->{$name} = $value;
@@ -35,7 +36,7 @@ sub _union_build {
     foreach my $sub (@{ $self->{subcons} }) {
         my $name = $sub->_get_name();
         next unless exists $data->{$name} and defined $data->{$name};
-        $sub->_build($parser, $string_stream, $data->{$name});
+        $parser->_build($sub, $data->{$name});
         $string_stream->seek($pos);
         $field_found = 1;
     }
@@ -45,8 +46,10 @@ sub _union_build {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $s_stream = Data::ParseBinary::Stream::StringWriter->new();
+    $parser->push_stream($s_stream);
     my $field_found = $self->_union_build($parser, $s_stream, $data);
     die "Union build error: not found any data" unless $field_found;
+    $parser->pop_stream();
     $stream->WriteBytes($s_stream->Flush());
 }
 
@@ -68,8 +71,10 @@ sub create {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $s_stream = Data::ParseBinary::Stream::StringWriter->new();
+    $parser->push_stream($s_stream);
     my $field_found = $self->_union_build($parser, $s_stream, $data);
     die "Union build error: not found any data" unless $field_found;
+    $parser->pop_stream();
     my $string = $s_stream->Flush();
     if ($self->{size} > length($string)) {
         $string .= "\0" x ( $self->{size} - length($string) );
@@ -93,7 +98,7 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $orig_pos = $stream->tell();
     my $upper_hash = $parser->ctx();
@@ -104,7 +109,7 @@ sub __parse {
         my $name = $sub->_get_name();
         my $value;
         eval {
-            $value = $sub->_parse($parser, $stream);
+            $value = $parser->_parse($sub);
         };
         $parser->pop_ctx();
         next if $@;
@@ -125,10 +130,12 @@ sub _build {
         my $hash = { %$upper_hash };
         my $inter_stream = Data::ParseBinary::Stream::StringWriter->new();
         $parser->push_ctx($hash);
+        $parser->push_stream($inter_stream);
         my $name = $sub->_get_name();
         eval {
-            $sub->_build($parser, $inter_stream, defined $name? $hash->{$name} : undef);
+            $parser->_build($sub, defined $name? $hash->{$name} : undef);
         };
+        $parser->pop_stream();
         $parser->pop_ctx();
         next if $@;
         %$upper_hash = %$hash;
@@ -149,16 +156,18 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $sub_stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($self->{parsing} => Wrap => $stream);
-    return $self->{subcon}->_parse($parser, $sub_stream);
+    $parser->push_stream($sub_stream);
+    return $parser->_parse($self->{subcon});
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $sub_stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter($self->{building} => Wrap => $stream);
-    $self->{subcon}->_build($parser, $sub_stream, $data);
+    $parser->push_stream($sub_stream);
+    $parser->_build($self->{subcon}, $data);
 }
 
 package Data::ParseBinary::TunnelAdapter;
@@ -171,19 +180,20 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
-    my $inter = $self->{subcon}->_parse($parser, $stream);
+    my $inter = $parser->_parse($self->{subcon});
     my $inter_stream = Data::ParseBinary::StringStreamReader->new($inter);
-    return $self->{inner_subcon}->_parse($parser, $inter_stream);
+    return $parser->_parse($self->{inner_subcon});
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $inter_stream = Data::ParseBinary::Stream::StringWriter->new();
-    $self->{inner_subcon}->_build($parser, $inter_stream, $data);
-    my $tdata = $inter_stream->Flush();
-    $self->{subcon}->_build($parser, $stream, $tdata);
+    $parser->push_stream($inter_stream);
+    $parser->_build($self->{inner_subcon}, $data);
+    $parser->pop_stream();
+    $parser->_build($self->{subcon}, $inter_stream->Flush());
 }
 
 package Data::ParseBinary::Peek;
@@ -196,12 +206,12 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $pos = $stream->tell();
     my $res;
     eval {
-        $res = $self->{subcon}->_parse($parser, $stream);
+        $res = $parser->_parse($self->{subcon});
     };
     if ($@) {
         $res = undef;
@@ -213,7 +223,7 @@ sub __parse {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     if ($self->{perform_build}) {
-        $self->{subcon}->_build($parser, $stream, $data);
+        $parser->_build($self->{subcon}, $data);
     }
 }
 
@@ -239,7 +249,7 @@ sub _getValue {
     return $self->{func}->();
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     return $self->_getValue($parser);
 }
@@ -274,20 +284,20 @@ sub _getBound {
     return $self->{bound};
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
-    return $self->_getBound($parser)->_parse($parser, $stream);
+    return $parser->_parse($self->_getBound($parser));
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    return $self->_getBound($parser)->_build($parser, $stream, $data);
+    return $parser->_build($self->_getBound($parser), $data);
 }
 
 package Data::ParseBinary::Terminator;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     eval { $stream->ReadBytes(1) };
     if (not $@) {
@@ -310,7 +320,7 @@ sub _size_of {
 package Data::ParseBinary::NullConstruct;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     return;
 }
@@ -343,12 +353,12 @@ sub _getPos {
     $self->{posfunc}->();
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $newpos = $self->_getPos($parser);
     my $origpos = $stream->tell();
     $stream->seek($newpos);
-    my $value = $self->{subcon}->_parse($parser, $stream);
+    my $value = $parser->_parse($self->{subcon});
     $stream->seek($origpos);
     return $value;
 }
@@ -358,7 +368,7 @@ sub _build {
     my $newpos = $self->_getPos($parser);
     my $origpos = $stream->tell();
     $stream->seek($newpos);
-    $self->{subcon}->_build($parser, $stream, $data);
+    $parser->_build($self->{subcon}, $data);
     $stream->seek($origpos);
 }
 
@@ -371,7 +381,7 @@ sub _size_of {
 package Data::ParseBinary::Anchor;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     return $stream->tell();
 }
@@ -419,18 +429,18 @@ sub _getCont {
     die "Error at Switch: got un-declared value, and no default was defined";
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $value = $self->_getCont($parser);
     return unless defined $value;
-    return $value->_parse($parser, $stream);
+    return $parser->_parse($value);
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     my $value = $self->_getCont($parser);
     return unless defined $value;
-    return $value->_build($parser, $stream, $data);
+    return $parser->_build($value, $data);
 }
 
 sub _size_of {
@@ -461,7 +471,7 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBytes($self->{len});
     return $data;
@@ -495,7 +505,7 @@ sub _getLength {
     return $self->{code}->();
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $len = $self->_getLength($parser);
     my $data = $stream->ReadBytes($len);
@@ -508,65 +518,6 @@ sub _build {
     $stream->WriteBytes($data);
 }
 
-package Data::ParseBinary::Enum;
-our @ISA = qw{Data::ParseBinary::Adapter};
-# TODO: implement as macro in terms of SymmetricMapping (macro)
-#   that is implemented as MappingAdapter
-
-sub _init {
-    my ($self, @params) = @_;
-    my $decode = {};
-    my $encode = {};
-    my $have_default = 0;
-    my $default_action = undef;
-    while (@params) {
-        my $key = shift @params;
-        my $value = shift @params;
-        if ($key eq '_default_') {
-            $have_default = 1;
-            $default_action = $value;
-            if (ref($default_action) and $default_action == $Data::ParseBinary::BaseConstruct::DefaultPass) {
-                $default_action = $Data::ParseBinary::BaseConstruct::DefaultPass;
-            }
-            next;
-        }
-        $encode->{$key} = $value;
-        $decode->{$value} = $key;
-    }
-    $self->{encode} = $encode;
-    $self->{decode} = $decode;
-    $self->{have_default} = $have_default;
-    $self->{default_action} = $default_action;
-}
-
-sub _decode {
-    my ($self, $value) = @_;
-    if (exists $self->{decode}->{$value}) {
-        return $self->{decode}->{$value};
-    }
-    if ($self->{have_default}) {
-        if (ref($self->{default_action}) and $self->{default_action} == $Data::ParseBinary::BaseConstruct::DefaultPass) {
-            return $value;
-        }
-        return $self->{default_action};
-    }
-    die "Enum: unrecognized value $value, and no default defined";
-}
-
-sub _encode {
-    my ($self, $tvalue) = @_;
-    if (exists $self->{encode}->{$tvalue}) {
-        return $self->{encode}->{$tvalue};
-    }
-    if ($self->{have_default}) {
-        if (ref($self->{default_action}) and $self->{default_action} == $Data::ParseBinary::BaseConstruct::DefaultPass) {
-            return $tvalue;
-        }
-        return $self->{default_action};
-    }
-    die "Enum: unrecognized value $tvalue";
-}
-
 package Data::ParseBinary::BitField;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
@@ -577,7 +528,7 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBits($self->{length});
     my $pad_len = 32 - $self->{length};
@@ -613,7 +564,7 @@ sub _getCount {
     $self->{count_code}->();
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     if ($stream->isBitStream()) {
         $stream->ReadBits($self->_getCount($parser));
@@ -655,12 +606,12 @@ sub _shouldStop {
     return $ret;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $list = [];
     $parser->push_ctx($list);
     while (1) {
-        my $value = $self->{sub}->_parse($parser, $stream);
+        my $value = $parser->_parse($self->{sub});
         push @$list, $value;
         last if $self->_shouldStop($parser, $value);
     }
@@ -674,7 +625,7 @@ sub _build {
     
     $parser->push_ctx($data);
     for my $item (@$data) {
-        $self->{sub}->_build($parser, $stream, $item);
+        $parser->_build($self->{sub}, $item);
         last if $self->_shouldStop($parser, $item);
     }
     $parser->pop_ctx();
@@ -701,13 +652,13 @@ sub _getLength {
     return $self->{len_code}->();
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $len = $self->_getLength($parser);
     my $list = [];
     $parser->push_ctx($list);
     for my $ix (1..$len) {
-        my $value = $self->{sub}->_parse($parser, $stream);
+        my $value = $parser->_parse($self->{sub});
         push @$list, $value;
     }
     $parser->pop_ctx();
@@ -722,7 +673,7 @@ sub _build {
     die "Invalid Sequence Length" if @$data != $len;
     $parser->push_ctx($data);
     for my $item (@$data) {
-        $self->{sub}->_build($parser, $stream, $item);
+        $parser->_build($self->{sub}, $item);
     }
     $parser->pop_ctx();
 }
@@ -742,7 +693,7 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $list = [];
     $parser->push_ctx($list);
@@ -751,7 +702,7 @@ sub __parse {
         for my $ix (1..$max) {
             my $value;
             eval {
-                $value = $self->{sub}->_parse($parser, $stream);
+                $value = $parser->_parse($self->{sub});
             };
             if ($@) {
                 die $@ if $ix <= $self->{min};
@@ -765,7 +716,7 @@ sub __parse {
             $ix++;
             my $value;
             eval {
-                $value = $self->{sub}->_parse($parser, $stream);
+                $value = $parser->_parse($self->{sub});
             };
             if ($@) {
                 die $@ if $ix <= $self->{min};
@@ -785,7 +736,7 @@ sub _build {
     die "Invalid Sequence Length (max)" if defined $self->{max} and @$data > $self->{max};
     $parser->push_ctx($data);
     for my $item (@$data) {
-        $self->{sub}->_build($parser, $stream, $item);
+        $parser->_build($self->{sub}, $item);
     }
     $parser->pop_ctx();
 }
@@ -801,13 +752,13 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $list = [];
     $parser->push_ctx($list);
     foreach my $sub (@{ $self->{subs} }) {
         my $name = $sub->_get_name();
-        my $value = $sub->_parse($parser, $stream);
+        my $value = $parser->_parse($sub);
         next unless defined $name;
         push @$list, $value;
     }
@@ -827,9 +778,9 @@ sub _build {
         my $name = $sub->_get_name();
         if (defined $name) {
             die "Invalid Sequence Length" if $ix >= $subs_count;
-            $sub->_build($parser, $stream, $data->[$ix]);
+            $parser->_build($sub, $data->[$ix]);
         } else {
-            $sub->_build($parser, $stream, undef);
+            $parser->_build($sub, undef);
             redo;
         }
     }
@@ -857,13 +808,13 @@ sub create {
 }
 
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $hash = {};
     $parser->push_ctx($hash);
     foreach my $sub (@{ $self->{subs} }) {
         my $name = $sub->_get_name();
-        my $value = $sub->_parse($parser, $stream);
+        my $value = $parser->_parse($sub);
         next unless defined $name;
         $hash->{$name} = $value;
     }
@@ -878,7 +829,7 @@ sub _build {
     $parser->push_ctx($data);
     foreach my $sub (@{ $self->{subs} }) {
         my $name = $sub->_get_name();
-        $sub->_build($parser, $stream, defined $name? $data->{$name} : undef);
+        $parser->_build($sub, defined $name? $data->{$name} : undef);
     }
     $parser->pop_ctx();
 }
@@ -895,12 +846,13 @@ sub _size_of {
 package Data::ParseBinary::BitStruct;
 our @ISA = qw{Data::ParseBinary::Struct};
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     if (not $stream->isBitStream()) {
         $stream = Data::ParseBinary::Stream::BitReader->new($stream);
+        $parser->push_stream($stream);
     }
-    return $self->SUPER::__parse($parser, $stream);
+    return $self->SUPER::_parse($parser, $stream);
 }
 
 
@@ -908,6 +860,7 @@ sub _build {
     my ($self, $parser, $stream, $data) = @_;
     if (not $stream->isBitStream()) {
         $stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter(Bit => Wrap => $stream);
+        $parser->push_stream($stream);
     }
     $self->SUPER::_build($parser, $stream, $data);
 }
@@ -923,7 +876,7 @@ sub create {
     return $self;
 }
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBytes($self->{sizeof});
     my $number = unpack $self->{pack_param}, $data;
@@ -945,7 +898,7 @@ sub _size_of {
 package Data::ParseBinary::ReveresedPrimitive;
 our @ISA = qw{Data::ParseBinary::Primitive};
 
-sub __parse {
+sub _parse {
     my ($self, $parser, $stream) = @_;
     my $data = $stream->ReadBytes($self->{sizeof});
     my $r_data = join '', reverse split '', $data;

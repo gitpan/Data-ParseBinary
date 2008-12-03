@@ -1,5 +1,10 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.10
+	- Design changes
+	- Changed the way Enum default value was defined
+	- Library parsers get their own independant module
+
 0.07 September 21, 2008
     - Add Library modules: FileSystem-MBR
     - Fixed test filename: NOTEPAD.EXE -> notepad.exe

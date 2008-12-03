@@ -1,4 +1,4 @@
-package Data::ParseBinary::lib::ExecPE32;
+package Data::ParseBinary::Executable::PE32;
 use strict;
 use warnings;
 use Data::ParseBinary;
@@ -351,7 +351,7 @@ sub min {
     }
 }
 
-my $pe32_file = Struct("pe32_file",
+our $pe32_parser = Struct("pe32_file",
     # headers
     $msdos_header,
     $coff_header,
@@ -368,8 +368,9 @@ my $pe32_file = Struct("pe32_file",
     Array(sub { $_->ctx->{coff_header}->{number_of_sections} }, $section),
 );
 
-our $Parser = $pe32_file;
-
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw($pe32_parser);
 
 package Data::ParseBinary::lib::ExecPE32::OneDownAdapter;
 our @ISA;
@@ -479,6 +480,23 @@ sub _encode {
 #    return obj2
 
 1;
+
+__END__
+
+=head1 NAME
+
+Data::ParseBinary::Executable::PE32 - Parsing Win32 EXE / DLL files
+
+=head1 SYNOPSIS
+
+    use Data::ParseBinary::Executable::PE32 qw{$pe32_parser};
+    my $data = $pe32_parser->parse(CreateStreamReader(File => $fh));
+
+Can parse a Windows (and DOS?) EXE and DLL files. However, when building it back,
+there are some minor differences from the original file, and Windows declare that
+it's not a valid Win32 application.
+
+=cut
 
 
 

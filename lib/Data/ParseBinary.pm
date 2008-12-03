@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.07;
+our $VERSION = 0.10;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -243,30 +243,6 @@ sub Restream { Data::ParseBinary::Restream->create(@_) }
 sub Bitwise {
     my ($subcon) = @_;
     return Restream($subcon, "Bit", "Bit");
-}
-
-my %library_types = (
-    'Graphics-BMP' => "Data::ParseBinary::lib::GraphicsBMP",
-    'Graphics-EMF' => "Data::ParseBinary::lib::GraphicsEMF",
-    'Graphics-PNG' => "Data::ParseBinary::lib::GraphicsPNG",
-    'Graphics-WMF' => "Data::ParseBinary::lib::GraphicsWMF",
-    'Executable-PE32' => "Data::ParseBinary::lib::ExecPE32",
-    'Executable-ELF32' => "Data::ParseBinary::lib::ExecELF32",
-    'Data-TermCapture' => "Data::ParseBinary::lib::DataCap",
-    'FileSystem-MBR' => "Data::ParseBinary::lib::FileSystemMbr",
-);
-
-sub Library {
-    my $type = pop @_;
-    die "Parse Library: Type not recognized" unless exists $library_types{$type};
-    my $type_name = $library_types{$type};
-    return $type_name if ref $type_name; # already loaded
-    eval qq{ require $type_name; };
-    die $@ if $@;
-    no strict 'refs';
-    my $type_ref = ${$type_name . '::Parser'};
-    $library_types{$type} = $type_ref;
-    return $type_ref;
 }
 
 sub Magic {
@@ -604,10 +580,11 @@ It is also possible to have a default:
     $s = Enum(Byte("protocol"),
         TCP => 6,
         UDP => 17,
-        _default_ => "blah",
+        _default_ => blah => 99,
     );
     $s->parse("\x12") # returns 'blah'
 
+Please note that the default tag must not be one of the supplied pairs.
 And finally:
 
     $s = Enum(Byte("protocol"),
@@ -771,7 +748,7 @@ exists.
         Optional(
             Struct("placeable_header",
                 Const(ULInt32("key"), 0x9AC6CDD7),
-                ULInt16("handle"),),
+                ULInt16("handle"),
             ),
         ),
         ULInt16("version"),
@@ -1139,74 +1116,19 @@ Reads from / Writes to a file. it is your responsebility to open the file and bi
 
 =head1 Format Library
 
-The Data::ParseBinary arrive with ever-expanding set of pre-defined parser for popular formats.
+The Data::ParseBinary arrive with ever-expanding set of pre-defined parsers for popular formats.
+Each of these parsers is in it's own module.
 And if you have a file-format, then this is how it's done:
 
-    my $bmp_parser = Data::ParseBinary->Library('Graphics-BMP');
+    use Data::ParseBinary::Graphics::BMP qw{$bmp_parser};
     open my $fh2, "<", $filename or die "can not open $filename";
     binmode $fh2;
     $data = $bmp_parser->parse(CreateStreamReader(File => $fh2));
 
 And $data will contain the parsed file. In the same way, it is possible to build a BMP file.
 
-The following explanations just highlight various issues with the various libraries.
-
-=head2 Graphics: BMP
-
-    my $bmp_parser = Data::ParseBinary->Library('Graphics-BMP');
-
-Can parse / build any BMP file, (1, 4, 8 or 24 bit) as long as RLE is not used.
-
-=head2 Graphics: EMF
-
-    my $emf_parser = Data::ParseBinary->Library('Graphics-EMF');
-
-This parser just do not work on my example file. Have to take a look on it.
-
-=head2 Graphics: PNG
-
-    my $png_parser = Data::ParseBinary->Library('Graphics-PNG');
-
-Parses the binay PNG format, however it does not decompress the compressed data.
-Also, it does not compute / verify the CRC values. 
-these actions are left to other layer in the program.
-
-=head2 Graphics: WMF
-
-    my $wmf_parser = Data::ParseBinary->Library('Graphics-WMF');
-
-No issues known.
-
-=head2 Executable: PE32
-
-    my $exec_pe32 = Data::ParseBinary->Library('Executable-PE32');
-
-Can parse a Windows (and DOS?) EXE and DLL files. However, when building it back,
-there are some minor differences from the original file, and Windows declare that
-it's not a valid Win32 application.
-
-=head2 Executable: ELF32
-
-    my $exec_elf32 = Data::ParseBinary->Library('Executable-ELF32');
-
-Can parse and re-build UNIX "so" files. 
-
-=head2 Data: Term Capture
-
-    my $data_cap = Data::ParseBinary->Library('Data-TermCapture');
-
-Parsing "tcpdump capture file", whatever it is. Please note that this parser
-have a lot of white space. (paddings) So when I rebuild the file, the padded
-area is zeroed, and the re-created file does not match the original file.
-
-I don't know if the recreated file is valid. 
-
-=head2 File System: MBR
-
-    my $fs_mbr = Data::ParseBinary->Library('FileSystem-MBR');
-
-Can parse the binary structure of the MBR. (that is the structure that tells your
-computer what partitions exists on the drive) Getting the data from there is your problem.
+Please look for the documentation inside each module,
+as it highlights various issues with the various libraries.
 
 =head1 Debugging
 

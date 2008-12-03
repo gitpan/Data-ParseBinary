@@ -4,41 +4,40 @@ use warnings;
 use FindBin;
 use Data::Dumper;
 use Data::ParseBinary;
-#use Test::More tests => 141;
-use Test::More qw(no_plan);
+use Data::ParseBinary::Graphics::EMF qw{$emf_parser};
+use Data::ParseBinary::Graphics::PNG qw{$png_parser};
+use Data::ParseBinary::Graphics::WMF qw{$wmf_parser};
+use Data::ParseBinary::Graphics::BMP qw{$bmp_parser};
+use Data::ParseBinary::Executable::PE32 qw{$pe32_parser};
+use Data::ParseBinary::Executable::ELF32 qw{$elf32_parser};
+use Data::ParseBinary::Data::Cap qw{$data_cap_parser};
+use Data::ParseBinary::FileSystem::MBR qw{$mbr_parser};
+use Test::More tests => 19;
+#use Test::More qw(no_plan);
 $| = 1;
 
 my $mydir = $FindBin::Bin . "/";
  
-my $bmp_parser = Data::ParseBinary->Library('Graphics-BMP');
-
 Test_BMP_Format("bitmapx1.bmp", [map { [ split '', $_ ] } qw{11100 11110 01111 00111 00011 00001 00000}]);
 Test_BMP_Format("bitmapx4.bmp", [map { [ split '\\.', $_ ] } qw{15.15.15.10.10 15.15.15.15.10 9.15.15.15.15 9.9.15.15.15 9.9.9.15.15 9.9.9.9.15 9.9.9.9.9}]);
 Test_BMP_Format("bitmapx8.bmp", [map { [ split '\\.', $_ ] } qw{228.228.228.144.144 228.228.228.228.144 251.228.228.228.228 251.251.228.228.228 251.251.251.228.228 251.251.251.251.228 251.251.251.251.251}]);
 my %dict = (1 => [192, 128, 128], 2 => [128, 64, 0], 3 => [0, 255, 255], 4 => [159, 162, 64]);
 Test_BMP_Format("bitmapx24.bmp", [map { [ map $dict{$_}, split '\\.', $_ ] } qw{1.1.1.2.2 1.1.1.1.2 3.1.1.1.1 3.3.1.1.1 3.3.3.1.1 3.3.3.3.1 4.3.3.3.3}]);
 
-my $emf_parser = Data::ParseBinary->Library('Graphics-EMF');
 #test_parse_build($emf_parser, "emf1.emf");
 
-my $png_parser = Data::ParseBinary->Library('Graphics-PNG');
 test_parse_build($png_parser, "png1.png");
 #test_parse_build($png_parser, "png2.png");
 
-my $wmf_parser = Data::ParseBinary->Library('Graphics-WMF');
 test_parse_build($wmf_parser, "wmf1.wmf");
 
-my $exec_pe32 = Data::ParseBinary->Library('Executable-PE32');
-test_parse_only($exec_pe32, "notepad.exe");
-test_parse_only($exec_pe32, "sqlite3.dll");
+test_parse_only($pe32_parser, "notepad.exe");
+test_parse_only($pe32_parser, "sqlite3.dll");
 
-my $exec_elf32 = Data::ParseBinary->Library('Executable-ELF32');
-test_parse_build($exec_elf32, "_ctypes_test.so");
+test_parse_build($elf32_parser, "_ctypes_test.so");
 
-my $data_cap = Data::ParseBinary->Library('Data-TermCapture');
-test_parse_build($data_cap, "cap2.cap");
+test_parse_build($data_cap_parser, "cap2.cap");
 
-my $fs_mbr = Data::ParseBinary->Library('FileSystem-MBR');
 my $packed =
     "33C08ED0BC007CFB5007501FFCBE1B7CBF1B065057B9E501F3A4CBBDBE07B104386E00".
     "7C09751383C510E2F4CD188BF583C610497419382C74F6A0B507B4078BF0AC3C0074FC".
@@ -56,7 +55,7 @@ my $packed =
     "000000371671020000C1FF0FFEFFFF761671028A8FDF06000000000000000000000000".
     "000000000000000000000000000000000000000055AA";
 my $string = pack "H*", $packed;
-ok( $string eq $fs_mbr->build($fs_mbr->parse($string)), "FileSystem-MBR: re-build");
+ok( $string eq $mbr_parser->build($mbr_parser->parse($string)), "FileSystem-MBR: re-build");
 
 sub test_parse_build {
     my ($parser, $filename) = @_;
