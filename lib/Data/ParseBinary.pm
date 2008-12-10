@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.10;
+our $VERSION = 0.11;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -454,6 +454,9 @@ Samples:
     );
     $data = $s->parse("ABBabb");
     # $data is [ 65, 16962, [ 97, 25186 ] ]
+    
+Be aware that not every construct works well under Sequence. For example, Value
+will have problems on building. Using Struct is prefered.
 
 =head2 Arrays and Ranges
 
@@ -461,18 +464,6 @@ Samples:
     $s = Array(4, UBInt8("foo"));
     $data = $s->parse("\x01\x02\x03\x04");
     # $data is [1, 2, 3, 4]
-    
-    # This is an array for 3 to 7 bytes
-    $s = Range(3, 7, UBInt8("foo"));
-    $data = $s->parse("\x01\x02\x03");
-    $data = $s->parse("\x01\x02\x03\x04\x05\x06\x07\x08\x09");
-    # in the last example, will take only 7 bytes from the stream
-    
-    # A range with at least one byte, unlimited
-    $s = GreedyRange(UBInt8("foo"));
-    
-    # A range with zero to unlimited bytes
-    $s = OptionalGreedyRange(UBInt8("foo"));
 
 =head2 Padding and BitStructs
 
@@ -526,7 +517,7 @@ BitStruct can be inside other BitStruct. Inside BitStruct, Struct and BitStruct 
     $data = $s->parse("\xe1\x1f");
     # $data is { a => 7, b => 0, c => 8, bar => { d => 15, e => 1 } }
 
-=head2 Adapters And Validators
+=head2 Adapters
 
 Adapters are constructs that transform the data that they work on.
 For creating an adapter, the class should inherent from the Data::ParseBinary::Adapter
@@ -565,6 +556,8 @@ And then:
 On additional note, it is possible to declare an "init" sub inside IpAddressAdapter,
 that will receive any extra parameter that "create" recieved. 
 
+=head2 Adapters: Enum
+
 One of the built-in Adapters is Enum:
 
     $s = Enum(Byte("protocol"),
@@ -596,6 +589,8 @@ And finally:
 
 $DefaultPass tells Enum that if it isn't familiar with the value, pass it alone.
 
+=head2 Adapters: FlagsEnum
+
 If the field represent a set of flags, then the library provide a construct just for that:
 
     $s = FlagsEnum(ULInt16("characteristics"),
@@ -611,6 +606,8 @@ If the field represent a set of flags, then the library provide a construct just
 Of course, this is equvalent to creating a BitStruct, and specifing Flag-s in the
 correct positions, and so on. but this is an easier way.
 
+=head2 Validators
+
 We also have Validators. A Validator is an Adapter that instead of transforming data,
 validate it. Examples:
 
@@ -625,6 +622,15 @@ Life isn't always simple. If you only have a rigid structure with constance type
 then you can use other modules, that are far simplier. hack, use pack/unpack.
 
 So if you have more complicate requirements, welcome to the meta-constructs.
+Basically, you pass a code ref to the meta-construct, which will be used while
+parsing and building.
+
+For every data that the code ref needs, the $_ variable is loaded with all the
+data that you need. $_->ctx is equal to $_->ctx(0), that returns hash-ref
+containing all the data that the current struct parsed. Is you want to go another level up, just request $_->ctx(1).
+
+=head2 Meta: Field
+
 The first on is the field. a Field is a chunk of bytes, with variable length:
 
     $s = Struct("foo",
@@ -643,9 +649,7 @@ An example:
 
 And so on.
 
-In the meta-constructs, $_ is loaded with all the data that you need. $_->ctx is equal to $_->ctx(0),
-that returns hash-ref containing all the data that the current struct parsed. In this example, it contain
-only "length". Is you want to go another level up, just request $_->ctx(1).
+=head2 Meta: Array
 
 Another meta-construct is the Array:
 
@@ -656,11 +660,15 @@ Another meta-construct is the Array:
     $data = $s->parse("\x03\x00\x01\x00\x02\x00\x03");
     # $data is {length => 3, data => [1, 2, 3]}
 
+=head2 Meta: RepeatUntil
+
 RepeatUntil gets for every round to inspect data on $_->obj:
 
     $s = RepeatUntil(sub {$_->obj eq "\x00"}, Field("data", 1));
     $data = $s->parse("abcdef\x00this is another string");
     # $data is [qw{a b c d e f}, "\0"]
+
+=head2 Meta: Switch
 
 OK. enough with the games. let's see some real branching.
 
@@ -713,6 +721,8 @@ And can use $DefaultPass that make it to no-op.
         )
     );
 
+=head2 Pointer and Anchor
+
 Pointers are another animal of meta-struct. For example:
 
     $s = Struct("foo",
@@ -740,19 +750,14 @@ Anchor can help a Pointer to find it's target:
 Anchor saves the current location in the stream, enable the Pointer to jump to location
 relative to it.
 
-Optional construct may or may not be in the stream. Of course, it need a seekable stream.
-The optional section usually have a Const in them, that indicates is this section
-exists. 
+Also, $_->stream->tell will point you to the current location, giving the ability for
+relative location without using Anchor. The above construct is quevalent to:
 
-    my $wmf_file = Struct("wmf_file",
-        Optional(
-            Struct("placeable_header",
-                Const(ULInt32("key"), 0x9AC6CDD7),
-                ULInt16("handle"),
-            ),
-        ),
-        ULInt16("version"),
-        ULInt32("size"), # file size is in words
+    $s = Struct("foo",
+        Byte("padding_length"),
+        Padding(sub { $_->ctx->{padding_length} } ),
+        Byte("relative_offset"),
+        Pointer(sub { $_->stream->tell + $_->ctx->{relative_offset} }, Byte("data")),
     );
 
 =head2 Strings
@@ -791,9 +796,7 @@ Can have many optional terminators:
     $s = CString("foo", terminators => "XYZ");
     $s->parse("helloY") # returns 'hello'
 
-=head2 Various
-
-Some verious constructs.
+=head2 Value
 
     $s = Struct("foo",
         UBInt8("width"),
@@ -802,6 +805,8 @@ Some verious constructs.
     );
 
 A calculated value - not in the stream.
+
+=head2 If
     
     $s = Struct("foo",
         Flag("has_options"),
@@ -809,6 +814,8 @@ A calculated value - not in the stream.
             Bytes("options", 5)
         )
     );
+
+=head2 Peek
     
     $s = Struct("foo",
         Byte("a"),
@@ -819,13 +826,19 @@ A calculated value - not in the stream.
 Peek is like Pointer for the current location. read the data, and then return to the location
 before the data.
 
+=head2 Const
+
     $s = Const(Bytes("magic", 6), "FOOBAR");
 
 Const verify that a certain value exists
 
+=head2 Terminator
+
     Terminator()->parse("")
 
 verify that we reached the end of the stream
+
+=head2 Alias
 
     $s = Struct("foo",
         Byte("a"),
@@ -833,6 +846,8 @@ verify that we reached the end of the stream
     );
 
 Copies "a" to "b".
+
+=head2 Union and RoughUnion
 
     $s = Union("foo",
         UBInt32("a"),
@@ -860,6 +875,8 @@ the array of integers, then it probably record_size % 4 = 0.
 If it's not, and we build this construct from the array, then we will be a few bytes
 short. 
 
+=head2 Aligned
+
     $s = Struct("bmp",
         ULInt32("width"),
         ULInt32("height"),
@@ -884,6 +901,8 @@ There is an array of lines (height) that each line is an array of pixels. each l
 is aligned to a four bytes boundary. 
 
 The modulo can be any number. 2, 4, 8, 7, 23. 
+
+=head2 Magic
 
     Magic("\x89PNG\r\n\x1a\n")
 
@@ -914,6 +933,59 @@ This construct is estinental for recoursive constructs.
     #            }
     #        }
     #    }
+
+=head1 Depricated Constructs
+
+A few construct are being depricated - for the reason that while parsing
+a binary stream, you should know before-hand what are you going to get.
+If needed, it is possible to use Peek or Pointer to look ahead.
+
+=head2 Ranges
+
+Please use Array, with constant or dynamic number of elements
+    
+    # This is an array for 3 to 7 bytes
+    $s = Range(3, 7, UBInt8("foo"));
+    $data = $s->parse("\x01\x02\x03");
+    $data = $s->parse("\x01\x02\x03\x04\x05\x06\x07\x08\x09");
+    # in the last example, will take only 7 bytes from the stream
+    
+    # A range with at least one byte, unlimited
+    $s = GreedyRange(UBInt8("foo"));
+    
+    # A range with zero to unlimited bytes
+    $s = OptionalGreedyRange(UBInt8("foo"));
+
+=head2 Optional
+
+Optional construct may or may not be in the stream. Of course, it need a seekable stream.
+The optional section usually have a Const in them, that indicates is this section
+exists. 
+
+    my $wmf_file = Struct("wmf_file",
+        Optional(
+            Struct("placeable_header",
+                Const(ULInt32("key"), 0x9AC6CDD7),
+                ULInt16("handle"),
+            ),
+        ),
+        ULInt16("version"),
+        ULInt32("size"), # file size is in words
+    );
+
+A better way is to Peek ahead, and decide if this part exists:
+
+    my $wmf_file = Struct("wmf_file",
+        Peek(ULInt32("header_key")),
+        If(sub { $_->ctx->{header_key} == 0x9AC6CDD7 },
+            Struct("placeable_header",
+                Const(ULInt32("key"), 0x9AC6CDD7),
+                ULInt16("handle"),
+            ),
+        ),
+        ULInt16("version"),
+        ULInt32("size"), # file size is in words
+    );
 
 =head1 Streams
 
@@ -1171,8 +1243,6 @@ Ability to give the CreateStreamReader/CreateStreamWriter function an ability to
 socket / filehandle / pointer to string.
 
 Union need to be extended to bit-structs?
-
-add the stream object to the parser object? can be usefull with Pointer.
 
 use some nice exception system
 

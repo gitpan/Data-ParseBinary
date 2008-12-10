@@ -2,10 +2,12 @@ use strict;
 use warnings;
 
 package Data::ParseBinary::BaseConstruct;
+use Carp qw{confess};
 
 our $DefaultPass;
 my $HOOK_BEFORE_ACTION = "HOOK_BEFORE_ACTION";
 my $HOOK_AFTER_ACTION = "HOOK_AFTER_ACTION";
+my $OBJECT_STACK = "OBJECT_STACK";
 
 sub create {
     my ($class, $name) = @_;
@@ -35,7 +37,12 @@ sub parse {
         $parser->{$HOOK_AFTER_ACTION} = [$after];
     }
     $parser->push_stream($stream);
-    return $parser->_parse($self);
+    my $results;
+    eval {
+        $results = $parser->_parse($self);
+    };
+    return $results unless $@;
+    confess $parser->_informative_exception($@);
 }
 
 sub _parse {
@@ -61,7 +68,10 @@ sub build {
         $parser->{$HOOK_AFTER_ACTION} = [$after];
     }
     $parser->push_stream($stream);
-    $parser->_build($self, $data);
+    eval {
+        $parser->_build($self, $data);
+    };
+    confess $parser->_informative_exception($@) if $@;
     return $stream->Flush();
 }
 
@@ -177,9 +187,11 @@ sub _validate {
 
 package Data::ParseBinary::Parser;
 
+my $EVALS = 'EVAL_MARKER';
+
 sub new {
     my ($class) = @_;
-    return bless {ctx=>[], obj=>undef}, $class;
+    return bless {ctx=>[], obj=>undef, $EVALS=>[], $OBJECT_STACK=>[] }, $class;
 }
 
 sub obj {
@@ -219,9 +231,36 @@ sub pop_stream {
     return shift @{ $self->{streams} };
 }
 
+sub stream {
+    my $self = shift;
+    return $self->{streams}->[0];
+}
+
+sub eval_enter {
+    my ($self) = @_;
+    my $streams_count = @{ $self->{streams} };
+    my $objects_count = @{ $self->{$OBJECT_STACK} };
+    my $eval_rec = { stream_count => $streams_count, objects_count => $objects_count };
+    push @{ $self->{$EVALS} }, $eval_rec;
+}
+
+sub eval_leave {
+    my ($self) = @_;
+    my $eval_rec = pop @{ $self->{$EVALS} };
+    my $streams_count = $eval_rec->{stream_count};
+    if ($streams_count < @{ $self->{streams} }) {
+        splice( @{ $self->{streams} }, 0, @{ $self->{streams} } - $streams_count, ());
+    }
+    my $objects_count = $eval_rec->{objects_count};
+    if ($objects_count < @{ $self->{$OBJECT_STACK} }) {
+        splice( @{ $self->{$OBJECT_STACK} }, $objects_count, @{ $self->{$OBJECT_STACK} } - $objects_count, ());
+    }
+}
+
 sub _build {
     my ($self, $construct, $data) = @_;
     my $streams_count = @{ $self->{streams} };
+    push @{ $self->{$OBJECT_STACK} }, $construct;
     if (exists $self->{$HOOK_BEFORE_ACTION}) {
         foreach my $hba ( @{ $self->{$HOOK_BEFORE_ACTION} } ) {
             $hba->($self, $construct, $data);
@@ -235,6 +274,7 @@ sub _build {
             $hba->($self, $construct, undef);
         }
     }
+    pop @{ $self->{$OBJECT_STACK} };
     if ($streams_count < @{ $self->{streams} }) {
         splice( @{ $self->{streams} }, 0, @{ $self->{streams} } - $streams_count, ());
     }
@@ -243,6 +283,7 @@ sub _build {
 sub _parse {
     my ($self, $construct) = @_;
     my $streams_count = @{ $self->{streams} };
+    push @{ $self->{$OBJECT_STACK} }, $construct;
     if (exists $self->{$HOOK_BEFORE_ACTION}) {
         foreach my $hba ( @{ $self->{$HOOK_BEFORE_ACTION} } ) {
             $hba->($self, $construct, undef);
@@ -256,15 +297,32 @@ sub _parse {
             $hba->($self, $construct, $data);
         }
     }
+    pop @{ $self->{$OBJECT_STACK} };
     if ($streams_count < @{ $self->{streams} }) {
         splice( @{ $self->{streams} }, 0, @{ $self->{streams} } - $streams_count, ());
     }
     return $data;
 }
 
-sub throw {
+sub _informative_exception {
     my ($self, $msg) = @_;
-    die $msg;
+    $msg =~ s/ at (.*)//;
+    my $ex = "Got Exception $msg\n";
+    $ex .= "Streams location:\n";
+    my $ix = 1;
+    foreach my $stream ( @{ $self->{streams} } ) {
+        my $stream_ref = ref $stream;
+        $stream_ref =~ s/^Data\:\:ParseBinary\:\:Stream\:\://;
+        $ex .= "$ix: Stream " . $stream_ref . " in byte #" . $stream->tell() . "\n";
+        $ix++;
+    }
+    $ex .= "Constructs Stack:\n";
+    $ix = 1;
+    foreach my $object (@{ $self->{$OBJECT_STACK} }) {
+        $ex .= "$ix: " . $object->_pretty_name() . "\n";
+        $ix++;
+    }
+    return $ex;
 }
 
 1;

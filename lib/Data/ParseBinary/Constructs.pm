@@ -106,11 +106,13 @@ sub _parse {
         $stream->seek($orig_pos);
         my $hash = {};
         $parser->push_ctx($hash);
+        $parser->eval_enter();
         my $name = $sub->_get_name();
         my $value;
         eval {
             $value = $parser->_parse($sub);
         };
+        $parser->eval_leave();
         $parser->pop_ctx();
         next if $@;
         $hash->{$name} = $value if defined $name;
@@ -131,10 +133,12 @@ sub _build {
         my $inter_stream = Data::ParseBinary::Stream::StringWriter->new();
         $parser->push_ctx($hash);
         $parser->push_stream($inter_stream);
+        $parser->eval_enter();
         my $name = $sub->_get_name();
         eval {
             $parser->_build($sub, defined $name? $hash->{$name} : undef);
         };
+        $parser->eval_leave();
         $parser->pop_stream();
         $parser->pop_ctx();
         next if $@;
@@ -209,13 +213,7 @@ sub create {
 sub _parse {
     my ($self, $parser, $stream) = @_;
     my $pos = $stream->tell();
-    my $res;
-    eval {
-        $res = $parser->_parse($self->{subcon});
-    };
-    if ($@) {
-        $res = undef;
-    }
+    my $res = $parser->_parse($self->{subcon});
     $stream->seek($pos);
     return $res;
 }

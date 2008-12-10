@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 169;
+use Test::More tests => 171;
 #use Test::More qw(no_plan);
 $| = 1;
 
@@ -355,6 +355,17 @@ $s = Struct("foo",
     Pointer(sub { $_->ctx->{absolute_position} + $_->ctx->{relative_offset} }, Byte("data")),
 );
 $data = {relative_offset=>3, absolute_position=>7, data=>255, padding_length=>5};
+$string = "\x05\x00\x00\x00\x00\x00\x03\x00\x00\x00\xff";
+is_deeply( $s->parse($string), $data, "Pointer n Anchor: Parse: Correct");
+ok(( $s->build($data) eq $string ), "Pointer n Anchor: Build: Correct");
+
+$s = Struct("foo",
+    Byte("padding_length"),
+    Padding(sub { $_->ctx->{padding_length} } ),
+    Byte("relative_offset"),
+    Pointer(sub { $_->stream->tell + $_->ctx->{relative_offset} }, Byte("data")),
+);
+$data = {relative_offset=>3, data=>255, padding_length=>5};
 $string = "\x05\x00\x00\x00\x00\x00\x03\x00\x00\x00\xff";
 is_deeply( $s->parse($string), $data, "Pointer n Anchor: Parse: Correct");
 ok(( $s->build($data) eq $string ), "Pointer n Anchor: Build: Correct");

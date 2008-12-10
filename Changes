@@ -1,6 +1,11 @@
 Revision history for Perl extension Data::ParseBinary.
 
-0.10
+0.11 December 11, 2008
+	- Completing the design changes
+	- Depricated Ranges, Optional and Select
+	- Improve error report
+
+0.10 December 4, 2008
 	- Design changes
 	- Changed the way Enum default value was defined
 	- Library parsers get their own independant module
