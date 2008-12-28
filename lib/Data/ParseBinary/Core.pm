@@ -325,4 +325,13 @@ sub _informative_exception {
     return $ex;
 }
 
+sub runCodeRef {
+    my ($self, $coderef) = @_;
+    if (not ($coderef and ref($coderef) and UNIVERSAL::isa($coderef, "CODE"))) {
+        return $coderef;
+    }
+    local $_ = $self;
+    return $coderef->();
+}
+
 1;

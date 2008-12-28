@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 171;
+use Test::More tests => 177;
 #use Test::More qw(no_plan);
 $| = 1;
 
@@ -415,6 +415,18 @@ ok(( $s->build({options => undef, has_options => 0 }) eq "\0"), "If: Build: Fals
 ok(( $s->build({options => 'hello', has_options => 1 }) eq "\x01hello"), "If: Build: True");
 
 $s = Struct("foo",
+    Flag("long_options"),
+    IfThenElse("options", sub { $_->ctx->{long_options} },
+        Bytes("Long Options", 5),
+        Bytes("Short Options", 3),
+    ),
+);
+is_deeply( $s->parse("\x01hello"), {options => 'hello', long_options => 1 }, "IfThenElse: Parse: True");
+is_deeply( $s->parse("\x00hello"), {options => 'hel', long_options => 0 }, "IfThenElse: Parse: False");
+ok(( $s->build({options => 'hel', long_options => 0 }) eq "\0hel"), "IfThenElse: Build: False");
+ok(( $s->build({options => 'hello', long_options => 1 }) eq "\x01hello"), "IfThenElse: Build: True");
+
+$s = Struct("foo",
     Flag("has_next"),
     If(sub { $_->ctx->{has_next} }, LazyBound("next", sub { $s })),
 );
@@ -430,6 +442,18 @@ $s = Struct("foo",
 );
 is_deeply( $s->parse("\x01\x02"), {a=>1, b=>2, c=>2}, "Peek: Parse: Simple");
 ok(( $s->build({a=>1, b=>222, c=>2}) eq "\x01\x02"), "Peek: Build: Ignored");
+
+$s = Struct("foo",
+    Byte("a"),
+    Peek(Byte("b"), 3),
+    UBInt16("c"),
+    Byte("d"),
+    Byte("e"),
+);
+$string = "\x01\xaa\xbb\x03\x04";
+$data = {a=>1, c=>43707, d=>3, e=>4};
+is_deeply( $s->parse($string), {%$data, b=>4}, "Far Peek: Parse: Simple");
+ok(( $s->build($data) eq $string), "Far Peek: Build: Ignored");
 
 $s = Const(Bytes("magic", 6), "FOOBAR");
 ok(($s->parse("FOOBAR") eq "FOOBAR"), "Const: Parse: OK");

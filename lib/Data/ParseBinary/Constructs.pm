@@ -204,15 +204,17 @@ package Data::ParseBinary::Peek;
 our @ISA = qw{Data::ParseBinary::WrappingConstruct};
 
 sub create {
-    my ($class, $subcon, $perform_build) = @_;
+    my ($class, $subcon, $distance) = @_;
     my $self = $class->SUPER::create($subcon);
-    $self->{perform_build} = $perform_build;
+    $self->{distance} = $distance || 0;
     return $self;
 }
 
 sub _parse {
     my ($self, $parser, $stream) = @_;
     my $pos = $stream->tell();
+    my $distance = $parser->runCodeRef($self->{distance});
+    $stream->seek($pos + $distance);
     my $res = $parser->_parse($self->{subcon});
     $stream->seek($pos);
     return $res;
@@ -220,9 +222,7 @@ sub _parse {
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    if ($self->{perform_build}) {
-        $parser->_build($self->{subcon}, $data);
-    }
+    # does nothing
 }
 
 sub _size_of {

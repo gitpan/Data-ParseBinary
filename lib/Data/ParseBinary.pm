@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.11;
+our $VERSION = 0.12;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -389,40 +389,32 @@ data structure.
 
 First off, a list of primitive elements:
 
-    UBInt8
-    ULInt8
-    UNInt8
-    SBInt8
-    SNInt8
-    SLInt8
-    Byte
+    Byte, UBInt8, ULInt8 (All three are aliases to the same things)
+    SBInt8, SLInt8
     UBInt16
     ULInt16
-    UNInt16
     SBInt16
     SLInt16
-    SNInt16
     UBInt32
     ULInt32
-    UNInt32
-    SNInt32
     SBInt32
     SLInt32
-    NFloat32
     BFloat32
     LFloat32
-    UNInt64
     UBInt64
     ULInt64
-    SNInt64
     SBInt64
     SLInt64
     BFloat64
     LFloat64
-    NFloat64
+    
+    # Bit fields
+    Flag, Bit (1 bit)
+    Nibble (4 bits)
+    Octet (8 bits, equal to "Byte")
+    BitField (variable length)
 
-S - Signed, U - Unsigned
-N - Platform natural, L - Little endian, B - Big Endian
+S - Signed, U - Unsigned, L - Little endian, B - Big Endian
 Samples:
 
     UBInt16("foo")->parse("\x01\x02") == 258
@@ -431,7 +423,7 @@ Samples:
     SBInt16("foo")->build(-31337) eq "\x85\x97"
     SLInt16("foo")->build(-31337) eq "\x97\x85"
 
-=head2 Structs and Sequences
+=head2 Struct
 
     $s = Struct("foo",
         UBInt8("a"),
@@ -443,6 +435,8 @@ Samples:
     );
     $data = $s->parse("ABBabb");
     # $data is { a => 65, b => 16962, bar => { a => 97, b => 25186 } }
+
+=head2 Sequence
     
     $s = Sequence("foo",
         UBInt8("a"),
@@ -458,7 +452,7 @@ Samples:
 Be aware that not every construct works well under Sequence. For example, Value
 will have problems on building. Using Struct is prefered.
 
-=head2 Arrays and Ranges
+=head2 Array
 
     # This is an Array of four bytes
     $s = Array(4, UBInt8("foo"));
@@ -519,26 +513,32 @@ BitStruct can be inside other BitStruct. Inside BitStruct, Struct and BitStruct 
 
 =head2 Adapters
 
-Adapters are constructs that transform the data that they work on.
+Adapters are constructs that transform the data that they work on. It wraps some underlining
+structure, and present the data in a new, easier to use, way. There are some built-in
+adapters for jeneral use, but it is easy to write one of your own.
+
+This is actually the easiest way to extend the framework.
 For creating an adapter, the class should inherent from the Data::ParseBinary::Adapter
-class. For example:
+class. For example, we will take the IP address. An IP address can be viewed as
+four bytes, or one unsigned long integer, but humans like to see it as dotted numbers.
+("1.2.3.4") Here is how I would have done it. First, I'll write an adapter class:
 
     package IpAddressAdapter;
     our @ISA = qw{Data::ParseBinary::Adapter};
     sub _encode {
         my ($self, $tvalue) = @_;
-        return pack "C4", split '\.', $tvalue;
+        return [split '\.', $tvalue];
     }
     sub _decode {
         my ($self, $value) = @_;
-        return join '.', unpack "C4", $value;
+        return join '.', @$value;
     }
 
-This adapter transforms dotted IP address ("1.2.3.4") for four bytes binary.
-However, adapter need a underline data constructs. so for actually creating one
+This adapter transforms dotted IP address ("1.2.3.4") to four numbers. Each number size
+is "byte", so we will use an array of four bytes. For actually creating one
 we should write:
 
-    my $ipAdapter = IpAddressAdapter->create(Bytes("foo", 4));
+    my $ipAdapter = IpAddressAdapter->create(Array(4, Byte("foo")));
 
 (An adapter inherits its name from the underlying data construct)
 
@@ -546,17 +546,18 @@ Or we can create a little function:
 
     sub IpAddressAdapterFunc {
         my $name = shift;
-        IpAddressAdapter->create(Bytes($name, 4));
+        IpAddressAdapter->create(Array(4, Byte($name)));
     }
 
 And then:
 
     IpAddressAdapterFunc("foo")->parse("\x01\x02\x03\x04");
+    # will return "1.2.3.4"
 
 On additional note, it is possible to declare an "init" sub inside IpAddressAdapter,
 that will receive any extra parameter that "create" recieved. 
 
-=head2 Adapters: Enum
+=head3 Enum
 
 One of the built-in Adapters is Enum:
 
@@ -589,7 +590,7 @@ And finally:
 
 $DefaultPass tells Enum that if it isn't familiar with the value, pass it alone.
 
-=head2 Adapters: FlagsEnum
+=head3 FlagsEnum
 
 If the field represent a set of flags, then the library provide a construct just for that:
 
@@ -629,6 +630,9 @@ For every data that the code ref needs, the $_ variable is loaded with all the
 data that you need. $_->ctx is equal to $_->ctx(0), that returns hash-ref
 containing all the data that the current struct parsed. Is you want to go another level up, just request $_->ctx(1).
 
+Also avialble are $_->obj, when need to inspect the current object, (see RepeatUntil)
+and $_->stream, which gives the current stream.
+
 =head2 Meta: Field
 
 The first on is the field. a Field is a chunk of bytes, with variable length:
@@ -651,7 +655,7 @@ And so on.
 
 =head2 Meta: Array
 
-Another meta-construct is the Array:
+We already seen Array, but it can also be meta-construct:
 
     $s = Struct("foo",
         Byte("length"),
@@ -806,13 +810,21 @@ Can have many optional terminators:
 
 A calculated value - not in the stream.
 
-=head2 If
+=head2 If / IfThenElse
     
     $s = Struct("foo",
         Flag("has_options"),
         If(sub { $_->ctx->{has_options} },
             Bytes("options", 5)
         )
+    );
+
+    $s = Struct("foo",
+        Flag("long_options"),
+        IfThenElse("options", sub { $_->ctx->{long_options} },
+            Bytes("Long Options", 5),
+            Bytes("Short Options", 3),
+        ),
     );
 
 =head2 Peek
@@ -823,14 +835,21 @@ A calculated value - not in the stream.
         Byte("c"),
     );
 
-Peek is like Pointer for the current location. read the data, and then return to the location
-before the data.
+Peek is like Pointer with two differences: one that it is no-op on build.
+second the location is calculated relative to the current location,
+while with Pointer it's absolute position.
+
+If no distance is supplied, zero is assumed. it is posible to supply
+constant distance, (i.e. 5) or code ref. Examples:
+
+    Peek(UBInt16("b"), 5) # Peek 5 bytes ahead
+    Peek(UBInt16("b"), sub { $_->ctx->{this_far} }) # calculated number of bytes ahead    
 
 =head2 Const
 
     $s = Const(Bytes("magic", 6), "FOOBAR");
 
-Const verify that a certain value exists
+Const verify that a certain value exists. See Magic for automatically value insertion.
 
 =head2 Terminator
 
@@ -939,6 +958,24 @@ This construct is estinental for recoursive constructs.
 A few construct are being depricated - for the reason that while parsing
 a binary stream, you should know before-hand what are you going to get.
 If needed, it is possible to use Peek or Pointer to look ahead.
+
+=head2 Primitives
+
+The following primitives are depricated, because I don't think it's good practice
+to declare a structure with native-order byte order.
+What if someone will run your program in a machine with the oposite byte order?
+N stand for Platform natural
+
+    UNInt8
+    SNInt8
+    UNInt16
+    SNInt16
+    UNInt32
+    SNInt32
+    UNInt64
+    SNInt64
+    NFloat32
+    NFloat64
 
 =head2 Ranges
 

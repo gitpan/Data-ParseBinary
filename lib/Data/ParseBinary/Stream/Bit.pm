@@ -34,7 +34,12 @@ sub ReadBits {
 
 sub tell {
     my $self = shift;
-    die "A bit stream is not seekable";
+    #die "A bit stream is not seekable";
+    if ($self->{buffer}) {
+        return "Bit ". (8 - length($self->{buffer}))
+    } else {
+        return "Bit 0";
+    }
 }
 
 sub seek {
@@ -82,7 +87,8 @@ sub Flush {
 
 sub tell {
     my $self = shift;
-    die "A bit stream is not seekable";
+    return "Bit ". length($self->{buffer});
+    #die "A bit stream is not seekable";
 }
 
 sub seek {
