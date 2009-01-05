@@ -376,27 +376,6 @@ sub _size_of {
     return 0;
 }
 
-package Data::ParseBinary::Anchor;
-our @ISA = qw{Data::ParseBinary::BaseConstruct};
-
-sub _parse {
-    my ($self, $parser, $stream) = @_;
-    return $stream->tell();
-}
-
-sub _build {
-    my ($self, $parser, $stream, $data) = @_;
-    my $context = $parser->ctx(0);
-    die "Anchor can not be on it's own" unless defined $context;
-    $context->{$self->_get_name()} = $stream->tell();
-}
-
-sub _size_of {
-    my ($self, $context) = @_;
-    # the construct size is 0
-    return 0;
-}
-
 package Data::ParseBinary::Switch;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 

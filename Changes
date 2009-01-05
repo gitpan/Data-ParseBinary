@@ -1,5 +1,9 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.13 January 5, 2009
+	- Documentation
+	- Anchor is now a Value
+
 0.12 December 28, 2008
 	- Documentation
 	- Peek now is a NOP on build

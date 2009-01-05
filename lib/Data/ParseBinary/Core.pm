@@ -318,7 +318,7 @@ sub _informative_exception {
     }
     $ex .= "Constructs Stack:\n";
     $ix = 1;
-    foreach my $object (@{ $self->{$OBJECT_STACK} }) {
+    foreach my $object (reverse @{ $self->{$OBJECT_STACK} }) {
         $ex .= "$ix: " . $object->_pretty_name() . "\n";
         $ix++;
     }

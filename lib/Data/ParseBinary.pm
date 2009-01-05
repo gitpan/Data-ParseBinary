@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.12;
+our $VERSION = 0.13;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -186,9 +186,9 @@ sub CString {
 
 sub Switch { return Data::ParseBinary::Switch->create(@_) }
 sub Pointer { return Data::ParseBinary::Pointer->create(@_) }
-sub Anchor { return Data::ParseBinary::Anchor->create(@_) }
 sub LazyBound { return Data::ParseBinary::LazyBound->create(@_) }
 sub Value { return Data::ParseBinary::Value->create(@_) }
+sub Anchor { my $name = shift; return Value($name, sub { $_->stream->tell } ) }
 sub Terminator { return Data::ParseBinary::Terminator->create() }
 
 sub IfThenElse {
@@ -361,6 +361,66 @@ Data::ParseBinary - Yet Another parser for binary structures
 
 =head1 SYNOPSIS
 
+    $s =
+    Struct("Construct",
+        Struct("Header",
+            Magic("MZ"),
+            Byte("Version"),
+            UBInt32("Expire Date"),
+            Enum(UBInt32("Data Type"),
+                Array => 0,
+                String => 1,
+                Various => 2,
+            ),
+            Byte("Have Extended Header"),
+            If ( sub { $_->ctx->{"Have Extended Header"} },
+                CString("Author")
+            ),
+        ),
+        Switch("data", sub { $_->ctx->{Header}->{"Data Type"} },
+            {
+                Array => Array(4, SBInt32("Signed Int 32")),
+                String => PascalString("Name"),
+                Various =>
+                    Struct("Various data",
+                        NoneOf(Byte("value"), [4, 9]),
+                        Padding(1), # byte
+                        BitStruct("Mini Values",
+                            Flag("done"),
+                            Nibble("Short"),
+                            Padding(1), #bit
+                            SBInt16("something"),
+                        ),
+                    ),
+            }
+        ),
+    );
+    my $data = $s->parse("MZabcde\0\0\0\1\1semuel\0\x05fghij");
+    # $data contains:
+    #    {
+    #        'Header' =>
+    #        {
+    #            'Version' => 97,
+    #            'Expire Date' => 1650680933
+    #            'Data Type' => 'String',
+    #            'Have Extended Header' => 1,
+    #            'Author' => 'semuel',
+    #        }
+    #        'data' => 'fghij',
+    #    }
+
+=head1 DESCRIPTION
+
+This module is a Perl Port for PyConstructs http://construct.wikispaces.com/
+
+This module enables writing declarations for simple and complex binary structures,
+parsing binary to hash/array data structure, and building binary data from hash/array
+data structure.
+
+=head1 Reference Code
+
+=head2 Struct
+
     $s = Struct("foo",
         UBInt8("a"),
         UBInt16("b"),
@@ -370,24 +430,19 @@ Data::ParseBinary - Yet Another parser for binary structures
         )
     );
     $data = $s->parse("ABBabb");
-    # $data contains { a => 65, b => 16962, bar => { a == 97, b => 25186 } }
+    # $data is { a => 65, b => 16962, bar => { a => 97, b => 25186 } }
 
-=head1 DESCRIPTION
-
-This module is a Perl Port for PyConstructs http://construct.wikispaces.com/
-
-Please note that this is a first experimental release. While the external interface is
-more or less what I want it to be, the internals are still in flux.
-
-This module enables writing declarations for simple and complex binary structures,
-parsing binary to hash/array data structure, and building binary data from hash/array
-data structure.
-
-=head1 Reference Code
+This is the main building block of the module - the struct. Whenever there is the
+need to bind a few varibles together, use Struct. Many constructs receive only one
+sub-construct as parameter, (for example, all the conditional constructs) so use
+Struct.
 
 =head2 Primitives
 
-First off, a list of primitive elements:
+=head3 Byte-Primitives
+
+But this Struct is just an empy shell. we need to fill it with data types.
+So here is a list of primitive elements:
 
     Byte, UBInt8, ULInt8 (All three are aliases to the same things)
     SBInt8, SLInt8
@@ -407,12 +462,6 @@ First off, a list of primitive elements:
     SLInt64
     BFloat64
     LFloat64
-    
-    # Bit fields
-    Flag, Bit (1 bit)
-    Nibble (4 bits)
-    Octet (8 bits, equal to "Byte")
-    BitField (variable length)
 
 S - Signed, U - Unsigned, L - Little endian, B - Big Endian
 Samples:
@@ -423,99 +472,242 @@ Samples:
     SBInt16("foo")->build(-31337) eq "\x85\x97"
     SLInt16("foo")->build(-31337) eq "\x97\x85"
 
-=head2 Struct
+And of course, see Struct above to how bundle a few primitives together.
+
+Be aware that the Float data type is not portable between platforms. So
+it is advisable not to use it when there is an alternative.
+
+=head3 Bit-Primitives
+    
+    Flag, Bit (1 bit)
+    Nibble (4 bits)
+    Octet (8 bits, equal to "Byte")
+    BitField (variable length)
+
+These primitive are bit-wide. however, unless using BitStruct, they take a whole
+byte from the input stream. Take for example this struct:
+
+    $s = Struct("bits",
+        Flag("a"),
+        Nibble("b"),
+    );
+    $data = $s->parse("\x25\x27");
+    # data is { a => 1, b => 7 }
+
+"\x25\x27" is 0010010100100111 in binary. The Flag is first, and it takes one byte
+from the stream (00100101) use the last bit (1) and discard the rest. After it comes
+the Mibble, that takes a byte too, (00100111) use the last four bits (0111) and discard
+the rest.
+
+If you need these bits to be packed tight together, see BitStruct.
+
+Examples for the rest of the bit constructs:
+
+    $s = Struct("bits",
+        Octet("a"),
+        BitField("b", 5),
+    );
+    $data = $s->parse("\x25\x27");
+    # data is { a => 37, b => 7 }
+
+=head2 Meta-Constructs
+
+Life isn't always simple. If you only have a rigid structure with constance types,
+then you can use other modules, that are far simplier. hack, use pack/unpack.
+
+So if you have more complicate requirements, welcome to the meta-constructs.
+Basically, you pass a code ref to the meta-construct, which will be used while
+parsing and building.
+
+For every data that the code ref needs, the $_ variable is loaded with all the
+data that you need. $_->ctx is equal to $_->ctx(0), that returns hash-ref
+containing all the data that the current struct parsed. Is you want to go another
+level up, just request $_->ctx(1).
+
+Also avialble are $_->obj, when need to inspect the current object, (see RepeatUntil)
+and $_->stream, which gives the current stream. (mostly used as $_->stream->tell to
+get the current location)
+
+As a rule, everywhere a code-ref is used, a simple number can be used too.
+If it doesn't - it's a bug. please report it.
+
+=head2 Meta-Primitives
+
+=head3 Field (Bytes)
+
+The first on is the field. a Field is a chunk of bytes, with variable length:
 
     $s = Struct("foo",
-        UBInt8("a"),
-        UBInt16("b"),
-        Struct("bar",
-            UBInt8("a"),
-            UBInt16("b"),
+        Byte("length"),
+        Field("data", sub { $_->ctx->{length} }),
+    );
+
+(it can be also in constent length, by replacing the code section with, for example, 4)
+So we have struct, that the first byte is the length of the field, and after that the field itself.
+An example:
+
+    $data = $s->parse("\x03ABC");
+    # $data is {length => 3, data => "ABC"} 
+    $data = $s->parse("\x04ABCD");
+    # $data is {length => 4, data => "ABCD"} 
+
+And so on.
+
+Field is also called Bytes.
+
+=head3 Value
+
+A calculated value - not in the stream. It is calculated on both parse and build.
+
+    $s = Struct("foo",
+        UBInt8("width"),
+        UBInt8("height"),
+        Value("total_pixels", sub { $_->ctx->{width} * $_->ctx->{height}}),
+    );
+
+=head3 Alias
+
+Copies "a" to "b".
+
+    $s = Struct("foo",
+        Byte("a"),
+        Alias("b", "a"),
+    );
+    $data = $s->parse("\x25");
+    # $data is { a => 37, b => 37 }
+
+=head2 Conditionals
+
+=head3 If / IfThenElse
+
+Basic branching:
+
+    $s = Struct("foo",
+        Flag("has_options"),
+        If(sub { $_->ctx->{has_options} },
+            Bytes("options", 5)
         )
     );
-    $data = $s->parse("ABBabb");
-    # $data is { a => 65, b => 16962, bar => { a => 97, b => 25186 } }
 
-=head2 Sequence
-    
-    $s = Sequence("foo",
-        UBInt8("a"),
-        UBInt16("b"),
-        Sequence("bar",
-            UBInt8("a"),
-            UBInt16("b"),
+The If statment takes it's name from the contained construct, and return undef
+of the condition is not met.
+
+    $s = Struct("foo",
+        Flag("long_options"),
+        IfThenElse("options", sub { $_->ctx->{long_options} },
+            Bytes("Long Options", 5),
+            Bytes("Short Options", 3),
+        ),
+    );
+
+The IfThenElse discard the name of the contained consturct, and use its own.
+
+=head3 Switch
+
+Multi branching. Can operate on numbers or strings. In the first example used with
+Enum to convert a value to string.
+
+The Switch discard the name of the contained consturcts, and use its own.
+return undef if $DefaultPass is used.
+
+    $s = Struct("foo",
+        Enum(Byte("type"),
+            INT1 => 1,
+            INT2 => 2,
+            INT4 => 3,
+            STRING => 4,
+        ),
+        Switch("data", sub { $_->ctx->{type} },
+            {
+                INT1 => UBInt8("spam"),
+                INT2 => UBInt16("spam"),
+                INT4 => UBInt32("spam"),
+                STRING => String("spam", 6),
+            }
         )
     );
-    $data = $s->parse("ABBabb");
-    # $data is [ 65, 16962, [ 97, 25186 ] ]
-    
-Be aware that not every construct works well under Sequence. For example, Value
-will have problems on building. Using Struct is prefered.
+    $data = $s->parse("\x01\x12");
+    # $data is {type => "INT1", data => 18}
+    $data = $s->parse("\x02\x12\x34");
+    # $data is {type => "INT2", data => 4660}
+    $data = $s->parse("\x04abcdef");
+    # $data is {type => "STRING", data => 'abcdef'}
 
-=head2 Array
+And so on. Switch also have a default option:
+
+    $s = Struct("foo",
+        Byte("type"),
+        Switch("data", sub { $_->ctx->{type} },
+            {
+                1 => UBInt8("spam"),
+                2 => UBInt16("spam"),
+            },
+            default => UBInt8("spam")
+        )
+    );
+
+And can use $DefaultPass that make it to no-op.
+
+    $s = Struct("foo",
+        Byte("type"),
+        Switch("data", sub { $_->ctx->{type} },
+            {
+                1 => UBInt8("spam"),
+                2 => UBInt16("spam"),
+            },
+            default => $DefaultPass,
+        )
+    );
+    $data = $s->parse("\x01\x27");
+    # $data is { type => 1, data => 37 }
+
+$DefaultPass is valid also as one of the options:
+
+    $s = Struct("foo",
+        Byte("type"),
+        Switch("data", sub { $_->ctx->{type} },
+            {
+                1 => $DefaultPass,
+                2 => UBInt16("spam"),
+            },
+            default => UBInt8("spam"),
+        )
+    );
+    $data = $s->parse("\x01\x27");
+    # $data is { type => 1, data => undef }
+    
+=head2 Loops
+
+=head3 Array
+
+Array, as any meta construct, and have constant length or variable lenght.
 
     # This is an Array of four bytes
     $s = Array(4, UBInt8("foo"));
     $data = $s->parse("\x01\x02\x03\x04");
     # $data is [1, 2, 3, 4]
 
-=head2 Padding and BitStructs
-
-Padding remove bytes from the stream
-
+    # Array with variable length
     $s = Struct("foo",
-        Padding(2),
-        Flag("myflag"),
-        Padding(5),
+        Byte("length"),
+        Array(sub { $_->ctx->{length}}, UBInt16("data")),
     );
-    $data = $s->parse("\x00\x00\x01\x00\x00\x00\x00\x00");
-    # $data is { myflag => 1 } 
+    $data = $s->parse("\x03\x00\x01\x00\x02\x00\x03");
+    # $data is {length => 3, data => [1, 2, 3]}
 
-Any bit field, when inserted inside a regular struct, will read one byte and
-use only a few bits from the byte. for working with bits, BitStruct can be used.
+=head3 RepeatUntil
 
-    $s = BitStruct("foo",
-        Padding(2),
-        Flag("myflag"),
-        Padding(5),
-    );
-    $data = $s->parse("\x20");
-    # $data is { myflag => 1 } 
+RepeatUntil gets for every round to inspect data on $_->obj:
 
-Padding in BitStruct remove bits from the stream, not bytes.
-
-    $s = BitStruct("foo",
-        BitField("a", 3), # three bit int
-        Flag("b"),  # one bit
-        Padding(3), # three bit padding
-        Nibble("c"),  # four bit int
-        BitField("d", 5), # five bit int
-    );
-    $data = $s->parse("\xe1\x1f");
-    # $data is { a => 7, b => 0, c => 8, d => 31 }
-
-there is also Octet that is eight bit int.
-
-BitStruct can be inside other BitStruct. Inside BitStruct, Struct and BitStruct are equivalents.
-
-    $s = BitStruct("foo",
-        BitField("a", 3),
-        Flag("b"),
-        Padding(3),
-        Nibble("c"),
-        Struct("bar",
-            Nibble("d"),
-            Bit("e"),
-        )
-    );
-    $data = $s->parse("\xe1\x1f");
-    # $data is { a => 7, b => 0, c => 8, bar => { d => 15, e => 1 } }
+    $s = RepeatUntil(sub {$_->obj eq "\x00"}, Field("data", 1));
+    $data = $s->parse("abcdef\x00this is another string");
+    # $data is [qw{a b c d e f}, "\0"]
 
 =head2 Adapters
 
 Adapters are constructs that transform the data that they work on. It wraps some underlining
 structure, and present the data in a new, easier to use, way. There are some built-in
-adapters for jeneral use, but it is easy to write one of your own.
+adapters for general use, but it is easy to write one of your own.
 
 This is actually the easiest way to extend the framework.
 For creating an adapter, the class should inherent from the Data::ParseBinary::Adapter
@@ -609,123 +801,133 @@ correct positions, and so on. but this is an easier way.
 
 =head2 Validators
 
-We also have Validators. A Validator is an Adapter that instead of transforming data,
-validate it. Examples:
+Validator... validate. they validate that the value on the stream is an expected
+one, and they validate that the value that need to be written to the stream is
+a correct one. otherwise, throws an exception.
+
+=head3 OneOf / NoneOf
 
     OneOf(UBInt8("foo"), [4,5,6,7])->parse("\x05") # return 5
     OneOf(UBInt8("foo"), [4,5,6,7])->parse("\x08") # dies.
     NoneOf(UBInt8("foo"), [4,5,6,7])->parse("\x08") # returns 8
     NoneOf(UBInt8("foo"), [4,5,6,7])->parse("\x05") # dies
 
-=head2 Meta-Constructs
+=head3 Const
 
-Life isn't always simple. If you only have a rigid structure with constance types,
-then you can use other modules, that are far simplier. hack, use pack/unpack.
+    $s = Const(Bytes("magic", 6), "FOOBAR");
 
-So if you have more complicate requirements, welcome to the meta-constructs.
-Basically, you pass a code ref to the meta-construct, which will be used while
-parsing and building.
+On parsing: verify that the correct value is being read, and return it.
 
-For every data that the code ref needs, the $_ variable is loaded with all the
-data that you need. $_->ctx is equal to $_->ctx(0), that returns hash-ref
-containing all the data that the current struct parsed. Is you want to go another level up, just request $_->ctx(1).
+On building: if value is supplied, verify that it is the correct one. if the
+value is not supplied, insert the correct one.
 
-Also avialble are $_->obj, when need to inspect the current object, (see RepeatUntil)
-and $_->stream, which gives the current stream.
+=head3 Magic
 
-=head2 Meta: Field
+    Magic("\x89PNG\r\n\x1a\n")
 
-The first on is the field. a Field is a chunk of bytes, with variable length:
+A constant string that is written / read and verified to / from the stream.
+For example, every PNG file starts with eight pre-defined bytes. this construct
+handle them, transparant to the calling program. (you don't need to supply a value,
+nor you will see the parsed value)
 
-    $s = Struct("foo",
-        Byte("length"),
-        Field("data", sub { $_->ctx->{length} }),
+=head2 BitStruct
+
+As said in the section about Bit-Primitives, these primitives are not packed tightly,
+and each will take complete bytes from the stream.
+If you need to pack them tightly, use BitStruct:
+
+    $s = BitStruct("foo",
+        BitField("a", 3), # three bit int
+        Flag("b"),  # one bit
+        Nibble("c"),  # four bit int
+        BitField("d", 5), # five bit int
     );
+    $data = $s->parse("\xe1\xf2");
+    # $data is { a => 7, b => 0, c => 1, d => 30 }
 
-(it can be also in constent length, by replacing the code section with, for example, 4)
-So we have struct, that the first byte is the length of the field, and after that the field itself.
-An example:
+As can be seen, we start with 1110000111110010. The it is being splitted as
+a=111, b=0, c=0001, d=11110 and the rest (010) is discard. 
 
-    $data = $s->parse("\x03ABC");
-    # $data is {length => 3, data => "ABC"} 
-    $data = $s->parse("\x04ABCD");
-    # $data is {length => 4, data => "ABCD"} 
+BitStruct can be inside other BitStruct. Inside BitStruct, Struct and BitStruct are equivalents.
 
-And so on.
-
-=head2 Meta: Array
-
-We already seen Array, but it can also be meta-construct:
-
-    $s = Struct("foo",
-        Byte("length"),
-        Array(sub { $_->ctx->{length}}, UBInt16("data")),
-    );
-    $data = $s->parse("\x03\x00\x01\x00\x02\x00\x03");
-    # $data is {length => 3, data => [1, 2, 3]}
-
-=head2 Meta: RepeatUntil
-
-RepeatUntil gets for every round to inspect data on $_->obj:
-
-    $s = RepeatUntil(sub {$_->obj eq "\x00"}, Field("data", 1));
-    $data = $s->parse("abcdef\x00this is another string");
-    # $data is [qw{a b c d e f}, "\0"]
-
-=head2 Meta: Switch
-
-OK. enough with the games. let's see some real branching.
-
-    $s = Struct("foo",
-        Enum(Byte("type"),
-            INT1 => 1,
-            INT2 => 2,
-            INT4 => 3,
-            STRING => 4,
-        ),
-        Switch("data", sub { $_->ctx->{type} },
-            {
-                "INT1" => UBInt8("spam"),
-                "INT2" => UBInt16("spam"),
-                "INT4" => UBInt32("spam"),
-                "STRING" => String("spam", 6),
-            }
+    $s = BitStruct("foo",
+        BitField("a", 3),
+        Flag("b"),
+        Nibble("c"),
+        Struct("bar",
+            Nibble("d"),
+            Bit("e"),
+            Octet("f"),
         )
     );
-    $data = $s->parse("\x01\x12");
-    # $data is {type => "INT1", data => 18}
-    $data = $s->parse("\x02\x12\x34");
-    # $data is {type => "INT2", data => 4660}
-    $data = $s->parse("\x04abcdef");
-    # $data is {type => "STRING", data => 'abcdef'}
+    $data = $s->parse("\xe1\xf2\x34");
+    # $data is { a => 7, b => 0, c => 1, bar => { d => 15, e => 0, f => 70 } }
 
-And so on. Switch also have a default option:
+It is possible to mix a byte-primitives inside a BitStruct:
+
+    $s = BitStruct("foo",
+        BitField("a", 3),
+        UBInt16("int data"),
+        Nibble("b"),
+    );
+    $data = $s->parse("\xe1\xf2\x34");
+    # $data is { a => 7, "int data" => 3985, b => 10 }
+
+Just be aware that this UBInt16 starts from the middle of the first byte, and
+ends in the middle of the third.
+
+BitStruct is based on a BitStream (see Stream) that is not seekable. So it can't
+contain any construct that require seekability.
+
+=head3 Bitwise
+
+Use Bitwise when you are not under a BitStream, and you have single construct
+that need to be packed by bits, and you don't want to create another hash for
+just this construct. Here is an example from BMP:
+
+    Bitwise(Array(sub { $_->ctx(2)->{width} }, Nibble("index")));
+
+We have an array of Nibble, that need to be packed together. 
+
+=head2 Padding
+
+Padding remove bytes from the stream
 
     $s = Struct("foo",
-        Byte("type"),
-        Switch("data", sub { $_->ctx->{type} },
-            {
-                1 => UBInt8("spam"),
-                2 => UBInt16("spam"),
-            },
-            default => UBInt8("spam")
-        )
+        Padding(2),
+        Flag("myflag"),
+        Padding(5),
     );
+    $data = $s->parse("\x00\x00\x01\x00\x00\x00\x00\x00");
+    # $data is { myflag => 1 } 
 
-And can use $DefaultPass that make it to no-op.
+However, if woring on Bit Stream, then Padding takes bits and not bytes
+
+    $s = BitStruct("foo",
+        Padding(2),
+        Flag("myflag"),
+        Padding(5),
+    );
+    $data = $s->parse("\x20");
+    # $data is { myflag => 1 } 
+
+Padding is a meta-construct, can take code ref instead of a number
 
     $s = Struct("foo",
-        Byte("type"),
-        Switch("data", sub { $_->ctx->{type} },
-            {
-                1 => UBInt8("spam"),
-                2 => UBInt16("spam"),
-            },
-            default => $DefaultPass,
-        )
+        Byte("count"),
+        Padding( sub { $_->ctx->{count} } ),
+        Flag("myflag"),
     );
+    $data = $s->parse("\x02\0\0\1");
+    # $data is { count => 2, muflag => 1 }
 
-=head2 Pointer and Anchor
+=head2 Peeking and Jumping
+
+Not all parsing is linear. sometimes you need to peek ahead to see if a certain
+value exists ahead, or maybe you know where the data is, it's just that it is
+some arbitary number of bytes ahead. or before.
+
+=head3 Pointer and Anchor
 
 Pointers are another animal of meta-struct. For example:
 
@@ -764,6 +966,24 @@ relative location without using Anchor. The above construct is quevalent to:
         Pointer(sub { $_->stream->tell + $_->ctx->{relative_offset} }, Byte("data")),
     );
 
+=head3 Peek
+    
+    $s = Struct("foo",
+        Byte("a"),
+        Peek(Byte("b")),
+        Byte("c"),
+    );
+
+Peek is like Pointer with two differences: one that it is no-op on build.
+second the location is calculated relative to the current location,
+while with Pointer it's absolute position.
+
+If no distance is supplied, zero is assumed. it is posible to supply
+constant distance, (i.e. 5) or code ref. Examples:
+
+    Peek(UBInt16("b"), 5) # Peek 5 bytes ahead
+    Peek(UBInt16("b"), sub { $_->ctx->{this_far} }) # calculated number of bytes ahead    
+
 =head2 Strings
 
 A string with constant length:
@@ -800,73 +1020,7 @@ Can have many optional terminators:
     $s = CString("foo", terminators => "XYZ");
     $s->parse("helloY") # returns 'hello'
 
-=head2 Value
-
-    $s = Struct("foo",
-        UBInt8("width"),
-        UBInt8("height"),
-        Value("total_pixels", sub { $_->ctx->{width} * $_->ctx->{height}}),
-    );
-
-A calculated value - not in the stream.
-
-=head2 If / IfThenElse
-    
-    $s = Struct("foo",
-        Flag("has_options"),
-        If(sub { $_->ctx->{has_options} },
-            Bytes("options", 5)
-        )
-    );
-
-    $s = Struct("foo",
-        Flag("long_options"),
-        IfThenElse("options", sub { $_->ctx->{long_options} },
-            Bytes("Long Options", 5),
-            Bytes("Short Options", 3),
-        ),
-    );
-
-=head2 Peek
-    
-    $s = Struct("foo",
-        Byte("a"),
-        Peek(Byte("b")),
-        Byte("c"),
-    );
-
-Peek is like Pointer with two differences: one that it is no-op on build.
-second the location is calculated relative to the current location,
-while with Pointer it's absolute position.
-
-If no distance is supplied, zero is assumed. it is posible to supply
-constant distance, (i.e. 5) or code ref. Examples:
-
-    Peek(UBInt16("b"), 5) # Peek 5 bytes ahead
-    Peek(UBInt16("b"), sub { $_->ctx->{this_far} }) # calculated number of bytes ahead    
-
-=head2 Const
-
-    $s = Const(Bytes("magic", 6), "FOOBAR");
-
-Const verify that a certain value exists. See Magic for automatically value insertion.
-
-=head2 Terminator
-
-    Terminator()->parse("")
-
-verify that we reached the end of the stream
-
-=head2 Alias
-
-    $s = Struct("foo",
-        Byte("a"),
-        Alias("b", "a"),
-    );
-
-Copies "a" to "b".
-
-=head2 Union and RoughUnion
+=head2 Union / RoughUnion
 
     $s = Union("foo",
         UBInt32("a"),
@@ -921,13 +1075,12 @@ is aligned to a four bytes boundary.
 
 The modulo can be any number. 2, 4, 8, 7, 23. 
 
-=head2 Magic
+=head2 Terminator
 
-    Magic("\x89PNG\r\n\x1a\n")
+    Terminator()->parse("")
 
-A constant string that is written / read and verified to / from the stream.
-For example, every PNG file starts with eight pre-defined bytes. this construct
-handle them, transparant to the calling program.
+verify that we reached the end of the stream. Not very useful, unless you are
+processing a file and need to verify that you have reached the end
 
 =head2 LasyBound
 
@@ -953,6 +1106,24 @@ This construct is estinental for recoursive constructs.
     #        }
     #    }
 
+=head2 Sequence
+
+Similar to Struct, just return an arrat reference instead of hash ref
+    
+    $s = Sequence("foo",
+        UBInt8("a"),
+        UBInt16("b"),
+        Sequence("bar",
+            UBInt8("a"),
+            UBInt16("b"),
+        )
+    );
+    $data = $s->parse("ABBabb");
+    # $data is [ 65, 16962, [ 97, 25186 ] ]
+    
+Be aware that not every construct works well under Sequence. For example, Value
+will have problems on building. Using Struct is prefered.
+
 =head1 Depricated Constructs
 
 A few construct are being depricated - for the reason that while parsing
@@ -964,6 +1135,7 @@ If needed, it is possible to use Peek or Pointer to look ahead.
 The following primitives are depricated, because I don't think it's good practice
 to declare a structure with native-order byte order.
 What if someone will run your program in a machine with the oposite byte order?
+
 N stand for Platform natural
 
     UNInt8
@@ -1241,13 +1413,36 @@ as it highlights various issues with the various libraries.
 
 =head1 Debugging
 
+=head2 Output on failure
+
+The first line of defence is the output on error. Where did it happend?
+in which construct? In which byte of the input?
+
+On error, you get the following "die" messege:
+
+    Got Exception not enought bytes in stream
+    
+    Streams location:
+    1: Stream BitReader in byte #Bit 5
+    2: Stream StringReader in byte #2
+    Constructs Stack:
+    1: BitField f
+    2: Struct bar
+    3: BitStruct foo
+
+It tells me that I was inside "f" under "bar" under "foo", that it's the
+second byte in stream, and because I was inside a BitStuct I get another
+line for the stream, pointing me to the exact bit.
+
 =head2 $print_debug_info
 
-Setting:
+What we miss in the "die" messege above, is knowing how did I got there.
+If it's inside Array, how many times it happen, and what decissions taken
+along the way. But fear not. just set $print_debug_info:
 
     $Data::ParseBinary::print_debug_info = 1;
 
-Will trigger a print every time the parsing process enter or exit a construct.
+This will trigger a print every time the parsing process enter or exit a construct.
 So if a parsing dies, you can follow where it did.
 
 =head1 TODO
@@ -1262,8 +1457,6 @@ The following elements were not implemented:
     Tunnel (TunnelAdapter is already implemented)
 
 Add encodings support for the Strings
-
-Convert the original unit tests to Perl (and make them pass...)
 
 Fix the Graphics-EMF library
 
@@ -1286,6 +1479,10 @@ use some nice exception system
 Find out if the EMF file should work or not. it fails on the statment:
 Const(ULInt32("signature"), 0x464D4520)
 And complain that it gets "0".
+
+Make BitField a meta construct?
+
+StringAdapter is currently a no-op
 
 =head1 Thread Safety
 
