@@ -379,7 +379,7 @@ ok(( $s->build("hello") eq 'helloXXXXX' ), "Padded String: Build: Simple");
 $s = PascalString("foo");
 ok(( $s->parse("\x05hello") eq 'hello'), "PascalString: Parse: Simple");
 ok(( $s->build("hello world") eq "\x0bhello world"), "PascalString: Build: Simple");
-$s = PascalString("foo", 'UBInt16');
+$s = PascalString("foo", \&UBInt16);
 ok(( $s->parse("\x00\x05hello") eq 'hello'), "PascalString: Parse: With cutsom length type");
 ok(( $s->build("hello") eq "\x00\x05hello"), "PascalString: Build: With cutsom length type");
 

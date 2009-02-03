@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.13;
+our $VERSION = 0.20;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -124,63 +124,98 @@ sub Field {
 }
 *Bytes = \&Field;
 sub RepeatUntil (&$) { return Data::ParseBinary::RepeatUntil->create(@_) }
-sub StringAdapter {
-    my ($subcon, %params) = @_;
-    return Data::ParseBinary::StringAdapter->create($subcon, $params{encoding});
+
+sub Char {
+    my ($name, $encoding) = @_;
+    
+    # if we don't have encoding - a char is simply one byte
+    return Field($name, 1) unless $encoding;
+    
+    if ( ( $encoding eq "UTF-32LE" ) or ( $encoding eq "UTF-32BE" ) ) {
+        my $subcon = Field($name, 4);
+        return Data::ParseBinary::CharacterEncodingAdapter->create($subcon, $encoding);
+    } elsif ( ( $encoding eq "UTF-16LE" ) or ( $encoding eq "UTF-16BE" ) ) {
+        my $place = $encoding eq "UTF-16LE" ? 1 : 0;
+        my $subcon = Struct($name,
+                            Field("FirstUnit", 2),
+                            Array( sub { my $ch = substr($_->ctx->{FirstUnit}, $place, 1); return ( ( ($ch ge "\xD8" ) and ($ch le "\xDB") ) ? 1 : 0 ) },
+                                  Field("TheRest", 2)
+                                  )
+                            );
+        my $assambled = Data::ParseBinary::FirstUnitAndTheRestAdapter->create($subcon, 2);
+        return Data::ParseBinary::CharacterEncodingAdapter->create($assambled, $encoding);
+    } elsif ( ( $encoding eq "utf8" ) or ( $encoding eq "UTF-8" ) ) {
+        my $subcon = Struct($name,
+                            Field("FirstUnit", 1),
+                            Array( sub { my $ch = $_->ctx->{FirstUnit}; return scalar(grep { $ch ge $_ } "\xC0", "\xE0", "\xF0" ) || 0 },
+                                  Field("TheRest", 1)
+                                  )
+                            );
+        my $assambled = Data::ParseBinary::FirstUnitAndTheRestAdapter->create($subcon, 1);
+        return Data::ParseBinary::CharacterEncodingAdapter->create($assambled, $encoding);
+    } elsif ( $encoding =~ /^(?:utf|ucs)/i ) {
+        die "Unrecognized UTF format: $encoding";
+    } else {
+        # this is a single-byte encoding
+        return Data::ParseBinary::CharacterEncodingAdapter->create(Field($name, 1), $encoding);
+    }
 }
+
+sub PaddedString {
+    my ($name, $length, %params) = @_;
+    my $subcon = Data::ParseBinary::PaddedStringAdapter->create(Field($name, $length), length => $length, %params);
+    return $subcon unless $params{encoding};
+    return Data::ParseBinary::CharacterEncodingAdapter->create($subcon, $params{encoding});
+};
 sub String {
     my ($name, $length, %params) = @_;
-    if (not defined $params{padchar}) {
-        return StringAdapter(Field($name, $length), encoding => $params{encoding});
-    } else {
-        return Data::ParseBinary::PaddedStringAdapter->create(Field($name, $length), length => $length, %params);
-        #name, length, encoding = None, padchar = None, 
-        #paddir = "right", trimdir = "right"
-        #con = PaddedStringAdapter(con, 
-        #    padchar = padchar, 
-        #    paddir = paddir, 
-        #    trimdir = trimdir
-        #)
+    if (defined $params{padchar}) {
+        #this is a padded string
+        return PaddedString($name, $length, %params);
     }
+    return Data::ParseBinary::JoinAdapter->create(
+        Array($length, Char($name, $params{encoding})),
+    );
 }
 sub LengthValueAdapter { return Data::ParseBinary::LengthValueAdapter->create(@_) }
 sub PascalString {
     my ($name, $length_field_type, $encoding) = @_;
-    $length_field_type ||= 'UBInt8';
+    $length_field_type ||= \&UBInt8;
     my $length_field;
     {
         no strict 'refs';
         $length_field = &$length_field_type('length');
     }
-    return StringAdapter(
-        LengthValueAdapter(
+    if (not $encoding) {
+        return LengthValueAdapter(
             Sequence($name,
                 $length_field,
                 Field("data", sub { $_->ctx->[0] }),
             )
-        ),
-        encoding => $encoding,
-    );
-    #name, length_field = UBInt8("length"), encoding = None
+        );
+    } else {
+        return LengthValueAdapter(
+            Sequence($name,
+                $length_field,
+                Data::ParseBinary::JoinAdapter->create(
+                    Array(sub { $_->ctx->[0] }, Char("data", $encoding)),
+                ),
+            )
+        );
+    }
 }
 
 sub CString {
     my ($name, %params) = @_;
     my ($terminators, $encoding, $char_field) = @params{qw{terminators encoding char_field}}; 
     $terminators = "\x00" unless defined $terminators;
-    $char_field ||= Field($name, 1);
+    $char_field ||= Char("data", $encoding);
     my @t_list = split '', $terminators;
     return Data::ParseBinary::CStringAdapter->create(
         Data::ParseBinary::JoinAdapter->create(
             RepeatUntil(sub { my $obj = $_->obj; grep($obj eq $_, @t_list) } ,$char_field)),
-            $terminators, $encoding
-        )
-    #return Rename($name,
-    #    CStringAdapter(
-    #        RepeatUntil(sub { my $obj = $_->obj; grep($obj eq $_, @t_list) } ,$char_field),
-    #        $terminators, $encoding
-    #    )
-    #)
+            $terminators
+        );
 }
 
 
@@ -321,10 +356,11 @@ our @EXPORT = qw(
     Pointer
     Anchor
 
+    Char
     String
-    StringAdapter
     PascalString
     CString
+    PaddedString
 
     LazyBound
     Value
@@ -986,19 +1022,61 @@ constant distance, (i.e. 5) or code ref. Examples:
 
 =head2 Strings
 
+=head3 Char
+
+The Char construct represent a single character. This can mean one byte, or
+if it have encoding attached, a multi-byte character.
+
+    $s = Char("c", "utf8");
+    $s->build("\x{1abcd}");
+    # returns "\xf0\x9a\xaf\x8d"
+
+The allowded encodings are:
+
+    UTF-32LE
+    UTF-32BE
+    UTF-16LE
+    UTF-16BE
+    UTF-8
+    utf8
+    or any single-byte encoding supported by the Encode module
+    for example: iso-8859-8
+
+If you don't know if your unicode string is BE or LE, then it's probably BE.
+
+=head3 String (constant length / meta)
+
 A string with constant length:
 
     String("foo", 5)->parse("hello")
     # returns "hello"
 
+A string with variable length, and encoding:
+
+    String("description", sub { $_->ctx->{description_size} }, encoding => 'UTF-16LE' )
+
+The string length is specified in *characters*, not bytes.
+
+=head3 PaddedString
+
 A Padded string with constant length:
 
-    $s = String("foo", 10, padchar => "X", paddir => "right");
+    $s = PaddedString("foo", 10, padchar => "X", paddir => "right");
     $s->parse("helloXXXXX") # return "hello"
     $s->build("hello") # return 'helloXXXXX'
 
-I think hat it speaks for itself. only that paddir can be noe of qw{right left center},
+I think that it speaks for itself. only that paddir can be one of qw{right left center},
 and there can be also trimdir that can be "right" or "left".
+
+When encoding is supplied, for example:
+
+    $s = PaddedString("foo", 10, encoding => "utf8");
+
+The String length is still specified in *bytes*, not characters. If anyone ever
+encouter a padded constant length string with multi byte encoding that it's length is
+specified in characters, please send me an email.
+
+=head3 PascalString
 
 PascalString - String with a length marker in the beginning:
 
@@ -1007,8 +1085,19 @@ PascalString - String with a length marker in the beginning:
 
 The marker can be of any kind:
 
-    $s = PascalString("foo", 'UBInt16');
+    $s = PascalString("foo", \&UBInt16);
     $s->build("hello") # returns "\x00\x05hello"
+
+(the marker can be pointer to any function that get a name and return construct.
+And on parse that construct should return a value. like the built-in primitives for example)
+
+With encoding:
+
+    $s = PascalString("foo", undef, "utf8");
+
+The string length is specified in *characters*, not bytes.
+
+=head3 CString
 
 And finally, CString:
 
@@ -1019,6 +1108,10 @@ Can have many optional terminators:
 
     $s = CString("foo", terminators => "XYZ");
     $s->parse("helloY") # returns 'hello'
+
+With encoding:
+
+    $s = CString("foo", encoding => "utf8");
 
 =head2 Union / RoughUnion
 

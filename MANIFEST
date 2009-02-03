@@ -23,6 +23,7 @@ lib/Data/ParseBinary/FileSystem/MBR.pm
 t/01various.t
 t/02streams.t
 t/03lib.t
+t/04encodings.t
 t/wmf1.wmf
 t/png1.png
 t/png2.png

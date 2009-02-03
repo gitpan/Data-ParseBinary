@@ -4,7 +4,7 @@ use warnings;
 use FindBin;
 use Data::Dumper;
 use Data::ParseBinary;
-use Data::ParseBinary::Graphics::EMF qw{$emf_parser};
+#use Data::ParseBinary::Graphics::EMF qw{$emf_parser};
 use Data::ParseBinary::Graphics::PNG qw{$png_parser};
 use Data::ParseBinary::Graphics::WMF qw{$wmf_parser};
 use Data::ParseBinary::Graphics::BMP qw{$bmp_parser};

@@ -145,12 +145,15 @@ my $header_record = Struct("header_record",
     SLInt32("device_height_mm"),         # Height of reference device in millimeters
     
     # description string
-    Pointer(sub { $_->ctx->{description_offset} },
-        StringAdapter(
-            Array(sub { $_->ctx->{description_size} },
-                Field("description", 2)
-            )
-        )
+    If( sub {$_->ctx->{description_offset} != 0 and $_->ctx->{description_size} != 0},
+        Pointer(sub { $_->ctx->{description_offset} },
+            String("description", sub { $_->ctx->{description_size} }, encoding => 'UTF-16LE' )
+            #StringAdapter(
+            #    Array(sub { $_->ctx->{description_size} },
+            #        Field("description", 2)
+            #    )
+            #)
+        ),
     ),
     
     # padding up to end of record

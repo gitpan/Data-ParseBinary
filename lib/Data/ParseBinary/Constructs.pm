@@ -647,7 +647,7 @@ sub _build {
     die "Invalid Sequence Value" unless defined $data and ref $data and UNIVERSAL::isa($data, "ARRAY");
     my $len = $self->_getLength($parser);
     
-    die "Invalid Sequence Length" if @$data != $len;
+    die "Invalid Sequence Length (length param is $len, actual input is ".scalar(@$data).")" if @$data != $len;
     $parser->push_ctx($data);
     for my $item (@$data) {
         $parser->_build($self->{sub}, $item);

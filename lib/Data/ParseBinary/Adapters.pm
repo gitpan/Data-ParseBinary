@@ -199,9 +199,6 @@ sub _init {
     if (not defined $params{length}) {
         die "PaddedStringAdapter: you must specify length";
     }
-    if (defined $params{encoding}) {
-        die "PaddedStringAdapter: encoding is not yet implemented";
-    }
     $self->{length} = $params{length};
     $self->{encoding} = $params{encoding};
     $self->{padchar} = defined $params{padchar} ? $params{padchar} : "\x00";
@@ -217,12 +214,7 @@ sub _init {
 
 sub _decode {
     my ($self, $value) = @_;
-    my $tvalue;
-    if ($self->{encoding}) {
-        die "TODO: Should implement different encodings";
-    } else {
-        $tvalue = $value;
-    }
+    my $tvalue = $value;
     my $char = $self->{padchar};
     if ($self->{paddir} eq 'right' or $self->{paddir} eq 'center') {
         $tvalue =~ s/$char*\z//;
@@ -234,12 +226,8 @@ sub _decode {
 
 sub _encode {
     my ($self, $tvalue) = @_;
-    my $value;
-    if ($self->{encoding}) {
-        die "TODO: Should implement different encodings";
-    } else {
-        $value = $tvalue;
-    }
+    my $value = $tvalue;
+    
     if (length($value) < $self->{length}) {
         my $add = $self->{length} - length($value);
         my $char = $self->{padchar};
@@ -264,42 +252,41 @@ sub _encode {
     return $value;
 }
 
-package Data::ParseBinary::StringAdapter;
+#package Data::ParseBinary::StringAdapter;
+#our @ISA = qw{Data::ParseBinary::Adapter};
+#
+#sub _init {
+#    my ($self, $encoding) = @_;
+#    $self->{encoding} = $encoding;
+#}
+#
+#sub _decode {
+#    my ($self, $value) = @_;
+#    my $tvalue;
+#    if ($self->{encoding}) {
+#        die "TODO: Should implement different encodings";
+#    } else {
+#        $tvalue = $value;
+#    }
+#    return $tvalue;
+#}
+#
+#sub _encode {
+#    my ($self, $tvalue) = @_;
+#    my $value;
+#    if ($self->{encoding}) {
+#        die "TODO: Should implement different encodings";
+#    } else {
+#        $value = $tvalue;
+#    }
+#    return $value;
+#}
+
+package Data::ParseBinary::CStringAdapter;
 our @ISA = qw{Data::ParseBinary::Adapter};
 
 sub _init {
-    my ($self, $encoding) = @_;
-    $self->{encoding} = $encoding;
-}
-
-sub _decode {
-    my ($self, $value) = @_;
-    my $tvalue;
-    if ($self->{encoding}) {
-        die "TODO: Should implement different encodings";
-    } else {
-        $tvalue = $value;
-    }
-    return $tvalue;
-}
-
-sub _encode {
-    my ($self, $tvalue) = @_;
-    my $value;
-    if ($self->{encoding}) {
-        die "TODO: Should implement different encodings";
-    } else {
-        $value = $tvalue;
-    }
-    return $value;
-}
-
-package Data::ParseBinary::CStringAdapter;
-our @ISA = qw{Data::ParseBinary::StringAdapter};
-
-sub _init {
-    my ($self, $terminators, $encoding) = @_;
-    $self->SUPER::_init($encoding);
+    my ($self, $terminators) = @_;
     $self->{regex} = qr/[$terminators]*\z/;
     $self->{terminator} = substr($terminators, 0, 1);
 }
@@ -326,6 +313,57 @@ sub _init {
 sub _validate {
     my ($self, $value) = @_;
     return $self->{coderef}->($value);
+}
+
+package Data::ParseBinary::FirstUnitAndTheRestAdapter;
+our @ISA = qw{Data::ParseBinary::Adapter};
+# this adapter move from a length of bytes, to one unit and the rest
+# as an array
+
+sub _init {
+    my ($self, $unit_length, $first_name, $the_rest) = @_;
+    $first_name ||= 'FirstUnit';
+    $the_rest ||= 'TheRest';
+    $self->{unit_length} = $unit_length;
+    $self->{first_name} = $first_name;
+    $self->{the_rest} = $the_rest;
+}
+
+sub _decode {
+    my ($self, $value) = @_;
+    $value = join('', $value->{$self->{first_name}}, @{ $value->{$self->{the_rest}} } );
+    return $value;
+}
+
+sub _encode {
+    my ($self, $tvalue) = @_;
+    my $u_len = $self->{unit_length};
+    die "Length of input should be dividable by unit_length" unless length($tvalue) % $u_len == 0;
+    my @units = map substr($tvalue, $_*$u_len, $u_len), 0..(length($tvalue) / $u_len - 1);
+    my $first = shift @units;
+    my $value = { $self->{first_name} => $first, $self->{the_rest} => \@units };
+    return $value;
+}
+
+package Data::ParseBinary::CharacterEncodingAdapter;
+our @ISA = qw{Data::ParseBinary::Adapter};
+
+sub _init {
+    my ($self, $encoding) = @_;
+    $self->{encoding} = $encoding;
+    require Encode;
+}
+
+sub _decode {
+    my ($self, $octets) = @_;
+    my $string = Encode::decode($self->{encoding}, $octets);
+    return $string;
+}
+
+sub _encode {
+    my ($self, $string) = @_;
+    my $octets = Encode::encode($self->{encoding}, $string);
+    return $octets;
 }
 
 

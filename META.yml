@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Data-ParseBinary
-version:             0.13
+version:             0.2
 abstract:            Yet Another parser for binary structures
 license:             ~
 author:              
