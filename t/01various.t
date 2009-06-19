@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 177;
+use Test::More tests => 181;
 #use Test::More qw(no_plan);
 $| = 1;
 
@@ -576,6 +576,26 @@ eval { $s->parse($string) };
 ok( (not $@), "Magic: Parse: OK");
 eval { $s->parse("PXNG") };
 ok( $@, "Magic: Parse: Dies");
+
+$s = ReversedBitStruct("foo",
+    BitField("a", 3),
+    Flag("b"),
+    Byte("c"),
+);
+$data = { a=>7, b=>0, c=>236 };
+$string = pack "B*", "0111011100000011";
+is_deeply($s->parse($string), $data, "ReversedBitStruct: Parse: correct");
+ok( $s->build($data) eq $string, "ReversedBitStruct: Build: correct");
+
+$s = ReversedBitStruct("foo",
+    BitField("a", 3),
+    Flag("b"),
+    ReversedBitField("c", 8),
+);
+$data = { a=>7, b=>0, c=>236 };
+$string = pack "B*", "1100011100001110";
+is_deeply($s->parse($string), $data, "ReversedBitStruct with ReversedBitField: Parse: correct");
+ok( $s->build($data) eq $string, "ReversedBitStruct with ReversedBitField: Build: correct");
 
 
 #print Dumper($data);

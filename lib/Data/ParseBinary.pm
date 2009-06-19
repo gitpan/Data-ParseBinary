@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.20;
+our $VERSION = 0.21;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -97,7 +97,19 @@ sub Bit       { return Data::ParseBinary::BitField->create($_[0], 1) }
 sub Nibble    { return Data::ParseBinary::BitField->create($_[0], 4) }
 sub Octet     { return Data::ParseBinary::BitField->create($_[0], 8) }
 sub BitField  { return Data::ParseBinary::BitField->create(@_) }
-sub BitStruct { return Data::ParseBinary::BitStruct->create(@_) }
+sub ReversedBitField { return Data::ParseBinary::ReversedBitField->create(@_) }
+
+sub ConditionalRestream { return Data::ParseBinary::ConditionalRestream->create(@_) }
+sub BitStruct {
+    my ($name, @subcons) = @_;
+    my $subcon = Struct($name, @subcons);
+    return ConditionalRestream($subcon, "Bit", "Bit", sub { not $_->stream->isBitStream() });
+}
+sub ReversedBitStruct {
+    my ($name, @subcons) = @_;
+    my $subcon = Struct($name, @subcons);
+    return ConditionalRestream($subcon, "ReversedBit", "ReversedBit", sub { not $_->stream->isBitStream() });
+}
 sub Enum      { return Data::ParseBinary::Enum->create(@_) }
 sub OneOf {
     my ($subcon, $list) = @_;
@@ -274,7 +286,10 @@ sub Aligned {
     return $s;
 }
 
-sub Restream { Data::ParseBinary::Restream->create(@_) }
+sub Restream {
+    my ($subcon, $stream_name) = @_;
+    return Data::ParseBinary::Restream->create($subcon, $stream_name, $stream_name);
+}
 sub Bitwise {
     my ($subcon) = @_;
     return Restream($subcon, "Bit", "Bit");
@@ -343,6 +358,8 @@ our @EXPORT = qw(
     Octet
     BitField
     BitStruct
+    ReversedBitField
+    ReversedBitStruct
 
     Enum
     $DefaultPass
@@ -924,6 +941,29 @@ just this construct. Here is an example from BMP:
     Bitwise(Array(sub { $_->ctx(2)->{width} }, Nibble("index")));
 
 We have an array of Nibble, that need to be packed together. 
+
+=head2 ReversedBitStruct and ReversedBitField
+
+BitStruct assumes that each byte is arranged, bit-wise, from the most significante
+bit (MSB) to the least significante bit. (LSB) However, it is not always true.
+
+Lets say that you bytes are:
+
+          MSB             LSB
+    Byte 1: A B C D E F G H
+    Byte 2: I J K M L N O P
+
+And suppose that you have a bit-struct with three fields. AF1 is three bits,
+AF2 is one bit, and AF3 is eight bits. so if:
+
+    AF1=ABC, AF2=D, AF3=EFGHIJKM
+    use: BitStruct with BitField
+    AF1=CBA, AF2=D, AF3=MKJIHGFE
+    use: BitStruct with ReversedBitField
+    AF1=HGF, AF2=E, AF3=DCBAPONL
+    use: ReversedBitStruct with BitField
+    AF1=FGH, AF2=E, AF3=LNOPABCD
+    use: ReversedBitStruct with ReversedBitField
 
 =head2 Padding
 
@@ -1549,10 +1589,6 @@ The following elements were not implemented:
     Embed
     Tunnel (TunnelAdapter is already implemented)
 
-Add encodings support for the Strings
-
-Fix the Graphics-EMF library
-
 Add documentation to: ExtractingAdapter
 
 Move the insertion of the parsed value to the context from the Struct/Sequence constructs
@@ -1569,13 +1605,12 @@ Union need to be extended to bit-structs?
 
 use some nice exception system
 
+Fix the Graphics-EMF library :
 Find out if the EMF file should work or not. it fails on the statment:
 Const(ULInt32("signature"), 0x464D4520)
 And complain that it gets "0".
 
 Make BitField a meta construct?
-
-StringAdapter is currently a no-op
 
 =head1 Thread Safety
 

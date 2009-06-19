@@ -98,5 +98,42 @@ sub seek {
 
 sub isBitStream { return 1 };
 
+package ReversedBitStreamReader;
+our @ISA = qw{Data::ParseBinary::Stream::BitReader};
+
+__PACKAGE__->_registerStreamType("ReversedBit");
+
+sub ReadBits {
+    my ($self, $bitcount) = @_;
+    my $current = $self->{buffer};
+    my $moreBitsNeeded = $bitcount - length($current);
+    if ($moreBitsNeeded > 0) {
+        my $moreBytesNeeded = int($moreBitsNeeded / 8) + ($moreBitsNeeded % 8 ? 1 : 0);
+        my $string = $self->{ss}->ReadBytes($moreBytesNeeded);
+        $string = join '', reverse split '', $string if $moreBytesNeeded > 1;
+        $current = unpack("B*", $string) . $current;
+    }
+    my $data = substr($current, -$bitcount, $bitcount, '');
+    $data = join '', reverse split '', $data if length($data) > 1;
+    $self->{buffer} = $current;
+    return $data;
+}
+
+package ReversedBitStreamWriter;
+our @ISA = qw{Data::ParseBinary::Stream::BitWriter};
+
+__PACKAGE__->_registerStreamType("ReversedBit");
+
+sub WriteBits {
+    my ($self, $bitdata) = @_;
+    $bitdata = join '', reverse split '', $bitdata if length($bitdata) > 1;
+    $self->{buffer} = $bitdata . $self->{buffer};
+    my $numof_bytesToWrite = int(length($self->{buffer}) / 8);    
+    my $num_of_bits_to_cut = $numof_bytesToWrite * 8;
+    my $bytesToWrite = substr($self->{buffer}, -$num_of_bits_to_cut, $num_of_bits_to_cut, '');
+    my $binaryToWrite = pack "B".($numof_bytesToWrite * 8), $bytesToWrite;
+    $binaryToWrite = join '', reverse split '', $binaryToWrite if $numof_bytesToWrite > 1;
+    return $self->{ss}->WriteBytes($binaryToWrite);
+}
 
 1;

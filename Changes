@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.21 July 19, 2009
+    - Added ReversedBitStruct and ReversedBitField
+
 0.20 January 31, 2009
 	- Strings now support encoding
 	- Added the Char construct

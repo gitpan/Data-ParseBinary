@@ -162,7 +162,7 @@ sub create {
 
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    my $sub_stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($self->{parsing} => Wrap => $stream);
+    my $sub_stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($self->{parsing} => $stream);
     $parser->push_stream($sub_stream);
     return $parser->_parse($self->{subcon});
 }
@@ -172,6 +172,34 @@ sub _build {
     my $sub_stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter($self->{building} => Wrap => $stream);
     $parser->push_stream($sub_stream);
     $parser->_build($self->{subcon}, $data);
+}
+
+package Data::ParseBinary::ConditionalRestream;
+our @ISA = qw{Data::ParseBinary::Restream};
+
+sub create {
+    my ($class, $subcon, $parsing, $building, $condition) = @_;
+    my $self = $class->SUPER::create($subcon, $parsing, $building);
+    $self->{condition} = $condition;
+    return $self;
+}
+
+sub _parse {
+    my ($self, $parser, $stream) = @_;
+    if ($parser->runCodeRef($self->{condition})) {
+        return $self->SUPER::_parse($parser, $stream);
+    } else {
+        return $parser->_parse($self->{subcon});
+    }
+}
+
+sub _build {
+    my ($self, $parser, $stream, $data) = @_;
+    if ($parser->runCodeRef($self->{condition})) {
+        $self->SUPER::_build($parser, $stream, $data);
+    } else {
+        $parser->_build($self->{subcon}, $data);
+    }
 }
 
 package Data::ParseBinary::TunnelAdapter;
@@ -520,6 +548,33 @@ sub _build {
     $stream->WriteBits($string);
 }
 
+package Data::ParseBinary::ReversedBitField;
+our @ISA = qw{Data::ParseBinary::BaseConstruct};
+
+sub create {
+    my ($class, $name, $length) = @_;
+    my $self = $class->SUPER::create($name);
+    $self->{length} = $length;
+    return $self;
+}
+
+sub _parse {
+    my ($self, $parser, $stream) = @_;
+    my $data = $stream->ReadBits($self->{length});
+    $data = join '', reverse split '', $data;
+    my $pad_len = 32 - $self->{length};
+    my $parsed = unpack "N", pack "B32", ('0' x $pad_len) . $data;
+    return $parsed;
+}
+
+sub _build {
+    my ($self, $parser, $stream, $data) = @_;
+    my $binaryString = unpack("B32", pack "N", $data);
+    my $string = substr($binaryString, -$self->{length}, $self->{length});
+    $string = join '', reverse split '', $string;
+    $stream->WriteBits($string);
+}
+
 package Data::ParseBinary::Padding;
 our @ISA = qw{Data::ParseBinary::BaseConstruct};
 
@@ -799,7 +854,6 @@ sub _parse {
     return $hash;
 }
 
-
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     die "Invalid Struct Value" unless defined $data and ref $data and UNIVERSAL::isa($data, "HASH");
@@ -818,28 +872,6 @@ sub _size_of {
         $size += $sub->_size_of($context);
     }
     return $size;
-}
-
-package Data::ParseBinary::BitStruct;
-our @ISA = qw{Data::ParseBinary::Struct};
-
-sub _parse {
-    my ($self, $parser, $stream) = @_;
-    if (not $stream->isBitStream()) {
-        $stream = Data::ParseBinary::Stream::BitReader->new($stream);
-        $parser->push_stream($stream);
-    }
-    return $self->SUPER::_parse($parser, $stream);
-}
-
-
-sub _build {
-    my ($self, $parser, $stream, $data) = @_;
-    if (not $stream->isBitStream()) {
-        $stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter(Bit => Wrap => $stream);
-        $parser->push_stream($stream);
-    }
-    $self->SUPER::_build($parser, $stream, $data);
 }
 
 package Data::ParseBinary::Primitive;
