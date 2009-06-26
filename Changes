@@ -1,5 +1,9 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.22 July 26, 2009
+	- Fixed the name of ReversedBitStream
+	- Cleanup: now everyone are using $parser->runCodeRef
+
 0.21 July 19, 2009
     - Added ReversedBitStruct and ReversedBitField
 

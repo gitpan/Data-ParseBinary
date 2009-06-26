@@ -98,7 +98,7 @@ sub seek {
 
 sub isBitStream { return 1 };
 
-package ReversedBitStreamReader;
+package Data::ParseBinary::Stream::ReversedBitStreamReader;
 our @ISA = qw{Data::ParseBinary::Stream::BitReader};
 
 __PACKAGE__->_registerStreamType("ReversedBit");
@@ -119,7 +119,7 @@ sub ReadBits {
     return $data;
 }
 
-package ReversedBitStreamWriter;
+package Data::ParseBinary::Stream::ReversedBitStreamWriter;
 our @ISA = qw{Data::ParseBinary::Stream::BitWriter};
 
 __PACKAGE__->_registerStreamType("ReversedBit");

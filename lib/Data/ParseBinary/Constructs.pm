@@ -269,20 +269,14 @@ sub create {
     return $self;
 }
 
-sub _getValue {
-    my ($self, $parser) = @_;
-    local $_ = $parser;
-    return $self->{func}->();
-}
-
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    return $self->_getValue($parser);
+    return $parser->runCodeRef($self->{func});
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    $parser->ctx->{$self->_get_name()} = $self->_getValue($parser);
+    $parser->ctx->{$self->_get_name()} = $parser->runCodeRef($self->{func});
 }
 
 sub _size_of {
@@ -302,22 +296,14 @@ sub create {
     return $self;
 }
 
-sub _getBound {
-    my ($self, $parser) = @_;
-    return $self->{bound} if $self->{bound};
-    local $_ = $parser;
-    $self->{bound} = $self->{boundfunc}->();
-    return $self->{bound};
-}
-
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    return $parser->_parse($self->_getBound($parser));
+    return $parser->_parse($parser->runCodeRef($self->{boundfunc}));
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    return $parser->_build($self->_getBound($parser), $data);
+    return $parser->_build($parser->runCodeRef($self->{boundfunc}), $data);
 }
 
 package Data::ParseBinary::Terminator;
@@ -373,15 +359,9 @@ sub create {
     return $self;
 }
 
-sub _getPos {
-    my ($self, $parser) = @_;
-    local $_ = $parser;
-    $self->{posfunc}->();
-}
-
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    my $newpos = $self->_getPos($parser);
+    my $newpos = $parser->runCodeRef($self->{posfunc});
     my $origpos = $stream->tell();
     $stream->seek($newpos);
     my $value = $parser->_parse($self->{subcon});
@@ -391,7 +371,7 @@ sub _parse {
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    my $newpos = $self->_getPos($parser);
+    my $newpos = $parser->runCodeRef($self->{posfunc});
     my $origpos = $stream->tell();
     $stream->seek($newpos);
     $parser->_build($self->{subcon}, $data);
@@ -423,8 +403,7 @@ sub create {
 
 sub _getCont {
     my ($self, $parser) = @_;
-    local $_ = $parser;
-    my $key = $self->{keyfunc}->();
+    my $key = $parser->runCodeRef($self->{keyfunc});
     if (exists $self->{cases}->{$key}) {
         return $self->{cases}->{$key};
     }
@@ -504,15 +483,9 @@ sub create {
     return $self;
 }
 
-sub _getLength {
-    my ($self, $parser) = @_;
-    local $_ = $parser;
-    return $self->{code}->();
-}
-
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    my $len = $self->_getLength($parser);
+    my $len = $parser->runCodeRef($self->{code});
     my $data = $stream->ReadBytes($len);
     return $data;
 }
@@ -581,36 +554,25 @@ our @ISA = qw{Data::ParseBinary::BaseConstruct};
 sub create {
     my ($class, $count) = @_;
     my $self = $class->SUPER::create(undef);
-    if (ref($count) and UNIVERSAL::isa($count, "CODE")) {
-        $self->{count_code} = $count;
-    } else {
-        $self->{count} = $count;
-    }
+    $self->{count_code} = $count;
     return $self;
-}
-
-sub _getCount {
-    my ($self, $parser) = @_;
-    return $self->{count} unless defined $self->{count_code};
-    local $_ = $parser;
-    $self->{count_code}->();
 }
 
 sub _parse {
     my ($self, $parser, $stream) = @_;
     if ($stream->isBitStream()) {
-        $stream->ReadBits($self->_getCount($parser));
+        $stream->ReadBits($parser->runCodeRef($self->{count_code}));
     } else {
-        $stream->ReadBytes($self->_getCount($parser));
+        $stream->ReadBytes($parser->runCodeRef($self->{count_code}));
     }
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     if ($stream->isBitStream()) {
-        $stream->WriteBits("0" x $self->_getCount($parser));
+        $stream->WriteBits("0" x $parser->runCodeRef($self->{count_code}));
     } else {
-        $stream->WriteBytes("\0" x $self->_getCount($parser));
+        $stream->WriteBytes("\0" x $parser->runCodeRef($self->{count_code}));
     }
 }
 
@@ -631,9 +593,8 @@ sub create {
 
 sub _shouldStop {
     my ($self, $parser, $value) = @_;
-    local $_ = $parser;
     $parser->set_obj($value);
-    my $ret = $self->{len_code}->();
+    my $ret = $parser->runCodeRef($self->{len_code});
     $parser->set_obj(undef);
     return $ret;
 }
@@ -678,15 +639,9 @@ sub create {
     return $self;
 }
 
-sub _getLength {
-    my ($self, $parser) = @_;
-    local $_ = $parser;
-    return $self->{len_code}->();
-}
-
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    my $len = $self->_getLength($parser);
+    my $len = $parser->runCodeRef($self->{len_code});
     my $list = [];
     $parser->push_ctx($list);
     for my $ix (1..$len) {
@@ -700,7 +655,7 @@ sub _parse {
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
     die "Invalid Sequence Value" unless defined $data and ref $data and UNIVERSAL::isa($data, "ARRAY");
-    my $len = $self->_getLength($parser);
+    my $len = $parser->runCodeRef($self->{len_code});
     
     die "Invalid Sequence Length (length param is $len, actual input is ".scalar(@$data).")" if @$data != $len;
     $parser->push_ctx($data);
