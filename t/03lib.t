@@ -12,7 +12,8 @@ use Data::ParseBinary::Executable::PE32 qw{$pe32_parser};
 use Data::ParseBinary::Executable::ELF32 qw{$elf32_parser};
 use Data::ParseBinary::Data::Cap qw{$data_cap_parser};
 use Data::ParseBinary::FileSystem::MBR qw{$mbr_parser};
-use Test::More tests => 19;
+use Data::ParseBinary::Data::Netflow qw($netflow_v5_parser);
+use Test::More tests => 22;
 #use Test::More qw(no_plan);
 $| = 1;
 
@@ -23,6 +24,7 @@ Test_BMP_Format("bitmapx4.bmp", [map { [ split '\\.', $_ ] } qw{15.15.15.10.10 1
 Test_BMP_Format("bitmapx8.bmp", [map { [ split '\\.', $_ ] } qw{228.228.228.144.144 228.228.228.228.144 251.228.228.228.228 251.251.228.228.228 251.251.251.228.228 251.251.251.251.228 251.251.251.251.251}]);
 my %dict = (1 => [192, 128, 128], 2 => [128, 64, 0], 3 => [0, 255, 255], 4 => [159, 162, 64]);
 Test_BMP_Format("bitmapx24.bmp", [map { [ map $dict{$_}, split '\\.', $_ ] } qw{1.1.1.2.2 1.1.1.1.2 3.1.1.1.1 3.3.1.1.1 3.3.3.1.1 3.3.3.3.1 4.3.3.3.3}]);
+Test_Netflow_Format("netflowv5.pdu", 5, 30);
 
 #test_parse_build($emf_parser, "emf1.emf");
 
@@ -79,6 +81,16 @@ sub Test_BMP_Format {
     my $data = $bmp_parser->parse(CreateStreamReader(File => $fh2));
     is_deeply($data->{pixels}, $expected_pixels, "$filename: Parse: OK");
     ok( copmare_scalar_file($bmp_parser, $data, $filename), "$filename: Build: OK");
+}
+
+sub Test_Netflow_Format {
+    my ($filename, $expected_version, $expected_frecords) = @_;
+    open my $fh2, "<", $mydir . $filename or die "can not open $filename";
+    binmode $fh2;
+    my $data = $netflow_v5_parser->parse(CreateStreamReader(File => $fh2));
+    is_deeply($data->{version}, $expected_version, "$filename: Parse Version: OK");
+    is_deeply($data->{count}, $expected_frecords, "$filename: Parse Count: OK");
+    ok( copmare_scalar_file($netflow_v5_parser, $data, $filename), "$filename: Build: OK");
 }
 
 sub copmare_scalar_file {

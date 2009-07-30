@@ -13,6 +13,7 @@ lib/Data/ParseBinary/Stream/Bit.pm
 lib/Data/ParseBinary/Stream/Wrapper.pm
 lib/Data/ParseBinary/Stream/File.pm
 lib/Data/ParseBinary/Data/Cap.pm
+lib/Data/ParseBinary/Data/Netflow.pm
 lib/Data/ParseBinary/Executable/ELF32.pm
 lib/Data/ParseBinary/Executable/PE32.pm
 lib/Data/ParseBinary/Graphics/WMF.pm
@@ -24,6 +25,7 @@ t/01various.t
 t/02streams.t
 t/03lib.t
 t/04encodings.t
+t/05bigint.t
 t/wmf1.wmf
 t/png1.png
 t/png2.png
@@ -36,5 +38,6 @@ t/_ctypes_test.so
 t/notepad.exe
 t/python.exe
 t/sqlite3.dll
+t/netflowv5.pdu
 t/cap2.cap
 META.yml                                 Module meta-data (added by MakeMaker)

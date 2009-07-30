@@ -366,5 +366,65 @@ sub _encode {
     return $octets;
 }
 
+package Data::ParseBinary::ExtendedNumberAdapter;
+our @ISA = qw{Data::ParseBinary::Adapter};
+
+sub _init {
+    my ($self, $is_signed, $is_bigendian) = @_;
+    $self->{is_signed} = $is_signed;
+    $self->{is_bigendian} = $is_bigendian;
+    require Math::BigInt;
+}
+
+sub _decode {
+    my ($self, $value) = @_;
+    if (not $self->{is_bigendian}) {
+        $value = join '', reverse split '', $value;
+    }
+    my $is_negative;
+    if ($self->{is_signed}) {
+        my $first_char = ord($value);
+        if ($first_char > 127) {
+            $value = ~$value;
+            $is_negative = 1;
+        }
+    }
+    
+    my $hexed = unpack "H*", $value;
+    my $number = Math::BigInt->new("0x$hexed");
+    if ($is_negative) {
+        $number->binc()->bneg();
+    }
+    return $number;
+}
+
+sub _encode {
+    my ($self, $number) = @_;
+    $number = Math::BigInt->new($number);
+
+    my $is_negative;
+    if ($self->{is_signed}) {
+        if ($number->sign() eq '-') {
+            $is_negative = 1;
+            $number->binc()->babs();
+        }
+    } else {
+        if ($number->sign() eq '-') {
+            die "Was given a negative number for unsigned integer";
+        }
+    }
+    
+    my $hexed = $number->as_hex();
+    substr($hexed, 0, 2, '');
+    my $packed = pack "H*", ("0"x(16-length($hexed))).$hexed;
+    if ($is_negative) {
+        $packed = ~$packed;
+    }
+    if (not $self->{is_bigendian}) {
+        $packed = join '', reverse split '', $packed;
+    }
+    return $packed;
+}
+
 
 1;

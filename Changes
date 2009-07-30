@@ -1,5 +1,12 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.23 July 30, 2009
+	- Started work on big-integers constructs. (64 bit)
+	- Now dependes on Math::BigInt
+	- Fixed bug in signed int 32
+	- Added Data::Netflow to the library (thanks Andrej)
+	(released on the jawish fest - Tisha Be'av - again...)
+
 0.22 July 26, 2009
 	- Fixed the name of ReversedBitStream
 	- Cleanup: now everyone are using $parser->runCodeRef

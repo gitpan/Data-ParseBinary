@@ -598,4 +598,5 @@ is_deeply($s->parse($string), $data, "ReversedBitStruct with ReversedBitField: P
 ok( $s->build($data) eq $string, "ReversedBitStruct with ReversedBitField: Build: correct");
 
 
+
 #print Dumper($data);

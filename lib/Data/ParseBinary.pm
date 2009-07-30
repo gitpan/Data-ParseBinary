@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.22;
+our $VERSION = 0.23;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -14,12 +14,17 @@ use Data::ParseBinary::Stream::Bit;
 use Data::ParseBinary::Stream::StringBuffer;
 use Data::ParseBinary::Stream::File;
 use Data::ParseBinary::Constructs;
-
+use Config;
 
 our $DefaultPass = Data::ParseBinary::NullConstruct->create();
 $Data::ParseBinary::BaseConstruct::DefaultPass = $DefaultPass;
 our $print_debug_info = undef;
 
+my $support_64_bit = 1;
+if (not ( ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) or ($Config{longsize} >= 8))) {
+    $support_64_bit = 0;
+    require Math::BigInt;
+}
 
 sub UBInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "n") }
 sub UBInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "N") }
@@ -28,12 +33,9 @@ sub ULInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "V") }
 sub UNInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "L") }
 sub UNInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "S") }
 sub UNInt8  { return Data::ParseBinary::Primitive->create($_[0], 1, "C") }
-sub UNInt64 { return Data::ParseBinary::Primitive->create($_[0], 8, "Q") }
-sub SNInt64 { return Data::ParseBinary::Primitive->create($_[0], 8, "q") }
 sub SNInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "l") }
 sub SNInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "s") }
 sub SNInt8  { return Data::ParseBinary::Primitive->create($_[0], 1, "c") }
-sub NFloat64{ return Data::ParseBinary::Primitive->create($_[0], 8, "d") }
 sub NFloat32{ return Data::ParseBinary::Primitive->create($_[0], 4, "f") }
 *SBInt8 = \&SNInt8;
 *SLInt8 = \&SNInt8;
@@ -41,17 +43,35 @@ sub NFloat32{ return Data::ParseBinary::Primitive->create($_[0], 4, "f") }
 *UBInt8 = \&UNInt8;
 *ULInt8 = \&UNInt8;
 
+if ($support_64_bit) {
+    *UNInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q") };
+    *SNInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q") };
+    *NFloat64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d") };
+} else {
+}
+
 if ($^V ge v5.10.0) {
     *SBInt16 = sub { return Data::ParseBinary::Primitive->create($_[0], 2, "s>") };
     *SLInt16 = sub { return Data::ParseBinary::Primitive->create($_[0], 2, "s<") };
-    *SBInt32 = sub { return Data::ParseBinary::Primitive->create($_[0], 2, "l>") };
-    *SLInt32 = sub { return Data::ParseBinary::Primitive->create($_[0], 2, "l<") };
-    *SBInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q>") };
-    *SLInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q<") };
-    *UBInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q>") };
-    *ULInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q<") };
-    *BFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d>") };
-    *LFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d<") };
+    *SBInt32 = sub { return Data::ParseBinary::Primitive->create($_[0], 4, "l>") };
+    *SLInt32 = sub { return Data::ParseBinary::Primitive->create($_[0], 4, "l<") };
+    if ($support_64_bit) {
+        *SBInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q>") };
+        *SLInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q<") };
+        *UBInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q>") };
+        *ULInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q<") };
+        *BFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d>") };
+        *LFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d<") };
+    } else {
+        *SBInt64 = sub {
+            my $name = shift;
+            return Data::ParseBinary::ExtendedNumberAdapter->create(
+                Field($name, 8), 1, 1);
+        };
+        *SLInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q<") };
+        *UBInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q>") };
+        *ULInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q<") };
+    }
     *BFloat32= sub { return Data::ParseBinary::Primitive->create($_[0], 4, "f>") };
     *LFloat32= sub { return Data::ParseBinary::Primitive->create($_[0], 4, "f<") };
 } else {
@@ -65,8 +85,8 @@ if ($^V ge v5.10.0) {
     }
     *SBInt16 = sub { return $primitive_class->create($_[0], 2, "s") };
     *SLInt16 = sub { return $reversed_class->create($_[0], 2, "s") };
-    *SBInt32 = sub { return $primitive_class->create($_[0], 2, "l") };
-    *SLInt32 = sub { return $reversed_class->create($_[0], 2, "l") };
+    *SBInt32 = sub { return $primitive_class->create($_[0], 4, "l") };
+    *SLInt32 = sub { return $reversed_class->create($_[0], 4, "l") };
     *SBInt64 = sub { return $primitive_class->create($_[0], 8, "q") };
     *SLInt64 = sub { return $reversed_class->create($_[0], 8, "q") };
     *UBInt64 = sub { return $primitive_class->create($_[0], 8, "Q") };
