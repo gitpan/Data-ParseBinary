@@ -6,7 +6,7 @@ WriteMakefile(
     ABSTRACT_FROM => 'lib/Data/ParseBinary.pm',
     AUTHOR        => 'Shmuel Fomberg <owner@semuel.co.il>',
     PREREQ_PM     => {	
-        'Math-BigInt' => 1.88,
+        'Math::BigInt' => 1.88,
     },
 );
 

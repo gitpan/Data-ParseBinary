@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.23;
+our $VERSION = 0.24;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -43,6 +43,11 @@ sub NFloat32{ return Data::ParseBinary::Primitive->create($_[0], 4, "f") }
 *UBInt8 = \&UNInt8;
 *ULInt8 = \&UNInt8;
 
+my $create_64_classes = sub {
+    my ($name, $is_signed, $is_be) = @_;
+    return Data::ParseBinary::ExtendedNumberAdapter->create(Field($name, 8), $is_signed, $is_be);
+};
+
 if ($support_64_bit) {
     *UNInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q") };
     *SNInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q") };
@@ -63,14 +68,12 @@ if ($^V ge v5.10.0) {
         *BFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d>") };
         *LFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d<") };
     } else {
-        *SBInt64 = sub {
-            my $name = shift;
-            return Data::ParseBinary::ExtendedNumberAdapter->create(
-                Field($name, 8), 1, 1);
-        };
-        *SLInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "q<") };
-        *UBInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q>") };
-        *ULInt64 = sub { return Data::ParseBinary::Primitive->create($_[0], 8, "Q<") };
+        *SBInt64 = sub { $create_64_classes->($_[0], 1, 1) };
+        *SLInt64 = sub { $create_64_classes->($_[0], 1, 0) };
+        *UBInt64 = sub { $create_64_classes->($_[0], 0, 1) };
+        *ULInt64 = sub { $create_64_classes->($_[0], 0, 0) };
+        *BFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d>") };
+        *LFloat64= sub { return Data::ParseBinary::Primitive->create($_[0], 8, "d<") };
     }
     *BFloat32= sub { return Data::ParseBinary::Primitive->create($_[0], 4, "f>") };
     *LFloat32= sub { return Data::ParseBinary::Primitive->create($_[0], 4, "f<") };
@@ -87,12 +90,21 @@ if ($^V ge v5.10.0) {
     *SLInt16 = sub { return $reversed_class->create($_[0], 2, "s") };
     *SBInt32 = sub { return $primitive_class->create($_[0], 4, "l") };
     *SLInt32 = sub { return $reversed_class->create($_[0], 4, "l") };
-    *SBInt64 = sub { return $primitive_class->create($_[0], 8, "q") };
-    *SLInt64 = sub { return $reversed_class->create($_[0], 8, "q") };
-    *UBInt64 = sub { return $primitive_class->create($_[0], 8, "Q") };
-    *ULInt64 = sub { return $reversed_class->create($_[0], 8, "Q") };
-    *BFloat64= sub { return $primitive_class->create($_[0], 8, "d") };
-    *LFloat64= sub { return $reversed_class->create($_[0], 8, "d") };
+    if ($support_64_bit) {
+        *SBInt64 = sub { return $primitive_class->create($_[0], 8, "q") };
+        *SLInt64 = sub { return $reversed_class->create($_[0], 8, "q") };
+        *UBInt64 = sub { return $primitive_class->create($_[0], 8, "Q") };
+        *ULInt64 = sub { return $reversed_class->create($_[0], 8, "Q") };
+        *BFloat64= sub { return $primitive_class->create($_[0], 8, "d") };
+        *LFloat64= sub { return $reversed_class->create($_[0], 8, "d") };
+    } else {
+        *SBInt64 = sub { $create_64_classes->($_[0], 1, 1) };
+        *SLInt64 = sub { $create_64_classes->($_[0], 1, 0) };
+        *UBInt64 = sub { $create_64_classes->($_[0], 0, 1) };
+        *ULInt64 = sub { $create_64_classes->($_[0], 0, 0) };
+        *BFloat64= sub { return $primitive_class->create($_[0], 8, "d") };
+        *LFloat64= sub { return $reversed_class->create($_[0], 8, "d") };
+    }
     *BFloat32= sub { return $primitive_class->create($_[0], 4, "f") };
     *LFloat32= sub { return $reversed_class->create($_[0], 4, "f") };
 }
@@ -1638,7 +1650,8 @@ This is a pure perl module. there should be not problems.
 
 =head1 BUGS
 
-None known
+Currently L/BFloat64 does not work if you don't have 64 bit numbers support
+compiled in your Perl
 
 =head1 SEE ALSO
 

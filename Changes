@@ -1,5 +1,10 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.24 Aug 17, 2009
+	- Fixes to the Netflow library
+	- Fixes to big (64) integers
+	- L/BFloat64 still defective
+
 0.23 July 30, 2009
 	- Started work on big-integers constructs. (64 bit)
 	- Now dependes on Math::BigInt
