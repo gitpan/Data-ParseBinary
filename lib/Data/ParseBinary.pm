@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.24;
+our $VERSION = 0.25;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -253,7 +253,7 @@ sub CString {
     my ($name, %params) = @_;
     my ($terminators, $encoding, $char_field) = @params{qw{terminators encoding char_field}}; 
     $terminators = "\x00" unless defined $terminators;
-    $char_field ||= Char("data", $encoding);
+    $char_field ||= Char($name, $encoding);
     my @t_list = split '', $terminators;
     return Data::ParseBinary::CStringAdapter->create(
         Data::ParseBinary::JoinAdapter->create(
