@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Data-ParseBinary
-version:            0.25
+version:            0.26
 abstract:           Yet Another parser for binary structures
 author:
     - Shmuel Fomberg <owner@semuel.co.il>

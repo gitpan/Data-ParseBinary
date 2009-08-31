@@ -849,7 +849,8 @@ sub _parse {
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    die "Invalid Primitive Value" unless defined $data and not ref $data;
+    die "Invalid Primitive Value" unless defined $data;
+    # FIXME and not ref $data;
     my $string = pack $self->{pack_param}, $data;
     $stream->WriteBytes($string);
 }
