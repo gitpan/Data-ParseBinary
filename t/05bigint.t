@@ -41,7 +41,8 @@ ok( $s->build($data) eq $string, "UBInt64: Build: one");
 $data = Math::BigInt->new("18446744073709551360");
 $string = "\xFF\xFF\xFF\xFF\xFF\xFF\xFF\0";
 is_deeply($s->parse($string), $data, "UBInt64: Parse: minus 256 (18446744073709551360)");
-ok( $s->build($data) eq $string, "UBInt64: Build: minus 256 (18446744073709551360)");
+my $ans = $s->build($data);
+ok( $ans eq $string, "UBInt64: Build: minus 256 (got:".unpack("H*", $ans).")");
 
 $s = ULInt64("BigOne");
 
@@ -52,5 +53,6 @@ ok( $s->build($data) eq $string, "ULInt64: Build: one");
 $data = Math::BigInt->new("18446744073709551360");
 $string = "\0\xFF\xFF\xFF\xFF\xFF\xFF\xFF";
 is_deeply($s->parse($string), $data, "ULInt64: Parse: minus 256 (18446744073709551360)");
-ok( $s->build($data) eq $string, "ULInt64: Build: minus 256 (18446744073709551360)");
+$ans = $s->build($data);
+ok( $ans eq $string, "ULInt64: Build: minus 256 (got:".unpack("H*", $ans).")");
 

@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.26;
+our $VERSION = 0.26_01;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
