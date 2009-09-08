@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.26_01;
+our $VERSION = 0.27;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -21,7 +21,10 @@ $Data::ParseBinary::BaseConstruct::DefaultPass = $DefaultPass;
 our $print_debug_info = undef;
 
 my $support_64_bit = 1;
-if (not ( ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) or ($Config{longsize} >= 8))) {
+if ( ( not ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) ) or
+     ( not ( $Config{longsize} >= 8 )) or
+     ( not ( (defined $Config{uselongdouble}) and ( $Config{uselongdouble} eq 'define')) ) or
+     ( not ( (defined $Config{use64bitall}) and ( $Config{use64bitall} eq 'define')))) {
     $support_64_bit = 0;
     require Math::BigInt;
 }
