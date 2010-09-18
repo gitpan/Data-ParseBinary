@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.26 Sep 19, 2010
+	- Fixed a bug in Data::ParseBinary::FileSystem::MBR (thanks paul)
+
 0.25 Aug 25, 2009
 	- Completed unit tests for all int 64 numbers 
 	- Bugfix: CString now respects its name (thanks Niobos)

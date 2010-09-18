@@ -51,8 +51,8 @@ our $mbr_parser = Struct("mbr",
                 BitField("sect", 6),
                 BitField("cyl", 10),
             ),
-            UBInt32("sector_offset"), # offset from MBR in sectors
-            UBInt32("size"), # in sectors
+            ULInt32("sector_offset"), # offset from MBR in sectors
+            ULInt32("size"), # in sectors
         )
     ),
     Magic("\x55\xAA"),
