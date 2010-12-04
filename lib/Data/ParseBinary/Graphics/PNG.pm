@@ -384,4 +384,7 @@ Parses the binay PNG format, however it does not decompress the compressed data.
 Also, it does not compute / verify the CRC values. 
 these actions are left to other layer in the program.
 
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
+
 =cut

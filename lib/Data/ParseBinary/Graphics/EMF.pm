@@ -187,4 +187,7 @@ Data::ParseBinary::Graphics::EMF
 
 This parser just do not work on my example file. Have to take a look on it.
 
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
+
 =cut

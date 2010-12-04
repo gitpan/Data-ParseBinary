@@ -496,6 +496,9 @@ Can parse a Windows (and DOS?) EXE and DLL files. However, when building it back
 there are some minor differences from the original file, and Windows declare that
 it's not a valid Win32 application.
 
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
+
 =cut
 
 

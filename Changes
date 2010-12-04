@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::ParseBinary.
 
+0.29 Dec 4, 2010
+	- Documentation fixes
+
 0.26 Sep 19, 2010
 	- Fixed a bug in Data::ParseBinary::FileSystem::MBR (thanks paul)
 

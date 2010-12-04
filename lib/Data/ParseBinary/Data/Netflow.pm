@@ -83,7 +83,10 @@ Data::ParseBinary::Data::Netflow - Parsing Netflow PDU binary structures
 
 =head1 CAVEAT
 
-    As for this moment version 5 format is supported only.
-    Read files only in network byte order (BE).
+As for this moment version 5 format is supported only.
+Read files only in network byte order (BE).
+
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
 
 =cut

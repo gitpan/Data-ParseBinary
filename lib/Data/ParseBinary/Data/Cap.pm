@@ -79,4 +79,7 @@ area is zeroed, and the re-created file does not match the original file.
 
 I don't know if the recreated file is valid. 
 
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
+
 =cut

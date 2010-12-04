@@ -106,4 +106,7 @@ Data::ParseBinary::Graphics::BMP
 
 Can parse / build any BMP file, (1, 4, 8 or 24 bit) as long as RLE is not used.
 
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
+
 =cut

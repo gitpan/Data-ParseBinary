@@ -103,6 +103,9 @@ Data::ParseBinary::Graphics::WMF
 
 Parsing the WMF Graphic format files
 
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
+
 No known issues
 
 =cut

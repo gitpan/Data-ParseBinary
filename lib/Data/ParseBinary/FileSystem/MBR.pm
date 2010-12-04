@@ -78,4 +78,7 @@ Data::ParseBinary::FileSystem::MBR - Parsing the partition table
 Can parse the binary structure of the MBR. (that is the structure that tells your
 computer what partitions exists on the drive) Getting the data from there is your problem.
 
+This is a part of the Data::ParseBinary package, and is just one ready-made parser.
+please go to the main page for additional usage info.
+
 =cut
