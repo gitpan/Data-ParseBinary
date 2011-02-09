@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 181;
+use Test::More tests => 186;
 #use Test::More qw(no_plan);
 $| = 1;
 
@@ -15,8 +15,14 @@ my $s1;
 ok( UBInt16("foo")->parse("\x01\x02") == 258, "Primitive: Parse: UBInt16");
 ok( ULInt16("foo")->parse("\x01\x02") == 513, "Primitive: Parse: ULInt16");
 ok( UBInt16("foo")->build(31337) eq 'zi', "Primitive: Build: UBInt16");
-ok( SBInt16("foo")->build(-31337) eq "\x85\x97", , "Primitive: Build: SBInt16");
-ok( SLInt16("foo")->build(-31337) eq "\x97\x85", , "Primitive: Build: SLInt16");
+ok( SBInt16("foo")->build(-31337) eq "\x85\x97", "Primitive: Build: SBInt16");
+ok( SLInt16("foo")->build(-31337) eq "\x97\x85", "Primitive: Build: SLInt16");
+
+ok( BFloat32("foo")->build(5) eq "\x40\xa0\0\0", "Primitive: Build: BFloat32");
+ok( LFloat32("foo")->build(5) eq "\0\0\xa0\x40", "Primitive: Build: LFloat32");
+ok( BFloat32("foo")->parse("\x40\xa0\0\0") == 5, "Primitive: Parse: BFloat32");
+ok( LFloat64("foo")->build(5) eq "\0\0\0\0\0\0\x14\x40", "Primitive: Build: LFloat64");
+ok( LFloat64("foo")->parse("\0\0\0\0\0\0\x14\x40") == 5, "Primitive: Build: LFloat64");
 
 $s = Struct("foo",
     UBInt8("a"),
