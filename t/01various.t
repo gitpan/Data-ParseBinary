@@ -3,8 +3,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use Data::ParseBinary;
-use Test::More tests => 186;
-#use Test::More qw(no_plan);
+use Test::More;
 $| = 1;
 
 my $data;
@@ -71,20 +70,6 @@ $string = "ABBabb";
 is_deeply($s->parse($string), $data, "Nested Sequence: Parse: correct");
 ok( $s->build($data) eq $string, "Nested Sequence: Build: correct");
 
-$s = Range(3, 7, UBInt8("foo"));
-eval { $data = $s->parse("\x01\x02") };
-ok( $@ , "Range: Parse: Die on too few elements");
-$data = [1..3];
-$string = "\x01\x02\x03";
-is_deeply($s->parse($string), $data, "Range: Parse: correct");
-ok( $s->build($data) eq $string, "Range: Build: correct");
-is_deeply($s->parse("\x01\x02\x03\x04\x05\x06\x07\x08\x09"), [1..7], "Range: Parse: correct data 2");
-eval { $s->build([1,2]) };
-ok( $@ , "Range: Build: Die on too few elements");
-eval { $s->build([1..8]) };
-ok( $@ , "Range: Build: Die on too many elements");
-ok( $s->build([1..7]) eq "\x01\x02\x03\x04\x05\x06\x07" , "Range: Build: correct");
-
 $s = Array(4, UBInt8("foo"));
 $data = $s->parse("\x01\x02\x03\x04");
 is_deeply( $s->parse("\x01\x02\x03\x04"), [1..4], "StrictRepeater: Parse: correct elements1");
@@ -94,34 +79,6 @@ is_deeply( $s->parse("\x01\x02\x03\x04\x05"), [1..4], "StrictRepeater: Parse: co
 ok( $s->build([5,6,7,8]) eq "\x05\x06\x07\x08", "StrictRepeater: Build: normal build");
 eval { $s->build([5,6,7,8,9]) };
 ok( $@, "StrictRepeater: Build: dies on too many elements");
-
-$s = GreedyRange(UBInt8("foo"));
-$data = [1];
-$string = "\x01";
-is_deeply($s->parse($string), $data, "GreedyRange: Parse: correct1");
-ok( $s->build($data) eq $string, "GreedyRange: Build: correct1");
-$data = [1..3];
-$string = "\x01\x02\x03";
-is_deeply($s->parse($string), $data, "GreedyRange: Parse: correct2");
-ok( $s->build($data) eq $string, "GreedyRange: Build: correct2");
-$data = [1..6];
-$string = "\x01\x02\x03\x04\x05\x06";
-is_deeply($s->parse($string), $data, "GreedyRange: Parse: correct3");
-ok( $s->build($data) eq $string, "GreedyRange: Build: correct3");
-eval { $data = $s->parse("") };
-ok( $@ , "GreedyRange: Parse: Die on too few elements");
-eval{ $s->build([]) };
-ok( $@, "GreedyRange: Build: dies on too few elements");
-
-$s = OptionalGreedyRange(UBInt8("foo"));
-$data = [];
-$string = "";
-is_deeply($s->parse($string), $data, "OptionalGreedyRange: Parse: empty");
-ok( $s->build($data) eq $string, "OptionalGreedyRange: Build: empty");
-$data = [1,2];
-$string = "\x01\x02";
-is_deeply($s->parse($string), $data, "OptionalGreedyRange: Parse: normal");
-ok( $s->build($data) eq $string, "OptionalGreedyRange: Build: normal");
 
 $s = Array(5, Array(2, UBInt8("foo")));
 $data = [[97,97], [98,98], [99,99], [100,100], [101,101]];
@@ -606,3 +563,5 @@ ok( $s->build($data) eq $string, "ReversedBitStruct with ReversedBitField: Build
 
 
 #print Dumper($data);
+
+done_testing();

@@ -2,6 +2,7 @@ package Data::ParseBinary::Graphics::PNG;
 use strict;
 use warnings;
 use Data::ParseBinary;
+use Data::ParseBinary qw{GreedyRange};
 
 # Portable Network Graphics (PNG) file format
 # Official spec: http://www.w3.org/TR/PNG

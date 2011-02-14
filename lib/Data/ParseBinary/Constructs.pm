@@ -153,23 +153,22 @@ package Data::ParseBinary::Restream;
 our @ISA = qw{Data::ParseBinary::WrappingConstruct};
 
 sub create {
-    my ($class, $subcon, $parsing, $building) = @_;
+    my ($class, $subcon, $stream_name) = @_;
     my $self = $class->SUPER::create($subcon);
-    $self->{parsing} = $parsing;
-    $self->{building} = $building;
+    $self->{stream_name} = $stream_name;
     return $self;
 }
 
 sub _parse {
     my ($self, $parser, $stream) = @_;
-    my $sub_stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($self->{parsing} => $stream);
+    my $sub_stream = Data::ParseBinary::Stream::Reader::CreateStreamReader($self->{stream_name} => $stream);
     $parser->push_stream($sub_stream);
     return $parser->_parse($self->{subcon});
 }
 
 sub _build {
     my ($self, $parser, $stream, $data) = @_;
-    my $sub_stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter($self->{building} => Wrap => $stream);
+    my $sub_stream = Data::ParseBinary::Stream::Writer::CreateStreamWriter($self->{stream_name} => Wrap => $stream);
     $parser->push_stream($sub_stream);
     $parser->_build($self->{subcon}, $data);
 }
@@ -178,8 +177,8 @@ package Data::ParseBinary::ConditionalRestream;
 our @ISA = qw{Data::ParseBinary::Restream};
 
 sub create {
-    my ($class, $subcon, $parsing, $building, $condition) = @_;
-    my $self = $class->SUPER::create($subcon, $parsing, $building);
+    my ($class, $subcon, $stream_name, $condition) = @_;
+    my $self = $class->SUPER::create($subcon, $stream_name);
     $self->{condition} = $condition;
     return $self;
 }

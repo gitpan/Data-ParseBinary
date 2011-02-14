@@ -2,6 +2,7 @@ package Data::ParseBinary::Graphics::WMF;
 use strict;
 use warnings;
 use Data::ParseBinary;
+use Data::ParseBinary qw{Optional GreedyRange};
 
 #####
 # Windows Meta File

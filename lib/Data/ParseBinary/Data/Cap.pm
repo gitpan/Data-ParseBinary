@@ -2,6 +2,7 @@ package Data::ParseBinary::Data::Cap;
 use strict;
 use warnings;
 use Data::ParseBinary;
+use Data::ParseBinary qw{OptionalGreedyRange};
 #"""
 #tcpdump capture file
 #"""

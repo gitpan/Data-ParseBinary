@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.29_01;
+our $VERSION = 0.30;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -21,19 +21,19 @@ $Data::ParseBinary::BaseConstruct::DefaultPass = $DefaultPass;
 our $print_debug_info = undef;
 
 my $support_64_bit_int = 1;
+#if ( ( not ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) ) or
+#     ( not ( $Config{longsize} >= 8 )) ) {
+#    $support_64_bit_int = 0;
+#    require Math::BigInt;
+#}
+
 if ( ( not ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) ) or
-     ( not ( $Config{longsize} >= 8 )) ) {
+     ( not ( $Config{longsize} >= 8 )) or
+     ( not ( (defined $Config{uselongdouble}) and ( $Config{uselongdouble} eq 'define')) ) or
+     ( not ( (defined $Config{use64bitall}) and ( $Config{use64bitall} eq 'define')))) {
     $support_64_bit_int = 0;
     require Math::BigInt;
 }
-
-#if ( ( not ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) ) or
-#     ( not ( $Config{longsize} >= 8 )) or
-#     ( not ( (defined $Config{uselongdouble}) and ( $Config{uselongdouble} eq 'define')) ) or
-#     ( not ( (defined $Config{use64bitall}) and ( $Config{use64bitall} eq 'define')))) {
-#    $support_64_bit = 0;
-#    require Math::BigInt;
-#}
 
 sub UBInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "n") }
 sub UBInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "N") }
@@ -139,12 +139,12 @@ sub ConditionalRestream { return Data::ParseBinary::ConditionalRestream->create(
 sub BitStruct {
     my ($name, @subcons) = @_;
     my $subcon = Struct($name, @subcons);
-    return ConditionalRestream($subcon, "Bit", "Bit", sub { not $_->stream->isBitStream() });
+    return ConditionalRestream($subcon, "Bit", sub { not $_->stream->isBitStream() });
 }
 sub ReversedBitStruct {
     my ($name, @subcons) = @_;
     my $subcon = Struct($name, @subcons);
-    return ConditionalRestream($subcon, "ReversedBit", "ReversedBit", sub { not $_->stream->isBitStream() });
+    return ConditionalRestream($subcon, "ReversedBit", sub { not $_->stream->isBitStream() });
 }
 sub Enum      { return Data::ParseBinary::Enum->create(@_) }
 sub OneOf {
@@ -324,11 +324,11 @@ sub Aligned {
 
 sub Restream {
     my ($subcon, $stream_name) = @_;
-    return Data::ParseBinary::Restream->create($subcon, $stream_name, $stream_name);
+    return Data::ParseBinary::Restream->create($subcon, $stream_name);
 }
 sub Bitwise {
     my ($subcon) = @_;
-    return Restream($subcon, "Bit", "Bit");
+    return Restream($subcon, "Bit");
 }
 
 sub Magic {
@@ -372,9 +372,6 @@ our @EXPORT = qw(
 
     Struct
     Sequence
-    Range
-    GreedyRange
-    OptionalGreedyRange
 
     Padding
 
@@ -425,7 +422,6 @@ our @EXPORT = qw(
     Bitwise
     Magic
     
-    Optional
     Select
     FlagsEnum
 );
@@ -442,7 +438,12 @@ our @Neturals_depricated = qw{
     NFloat32
     NFloat64
 };
-our @EXPORT_OK = @Neturals_depricated;
+our @EXPORT_OK = (@Neturals_depricated, qw{
+    Range
+    GreedyRange
+    OptionalGreedyRange
+    Optional
+});
 our %EXPORT_TAGS = ( NATURALS => \ @Neturals_depricated, all => [ @EXPORT_OK, @EXPORT ]);
 
 1;
@@ -1303,6 +1304,11 @@ will have problems on building. Using Struct is prefered.
 A few construct are being depricated - for the reason that while parsing
 a binary stream, you should know before-hand what are you going to get.
 If needed, it is possible to use Peek or Pointer to look ahead.
+
+These will be exported only by request, or by using the :all tag
+
+	use Data::ParseBinary qw{:all};
+	use Data::ParseBinary qw{UNInt64 OptionalGreedyRange};
 
 =head2 Primitives
 
