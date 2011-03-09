@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Data-ParseBinary
-version:            0.3
+version:            0.31
 abstract:           Yet Another parser for binary structures
 author:
     - Shmuel Fomberg <owner@semuel.co.il>
@@ -11,7 +11,8 @@ configure_requires:
 build_requires:
     ExtUtils::MakeMaker:  0
 requires:
-    Math::BigInt:  1.99
+    Math::BigInt:  1.993
+    Test::More:    0.96
 no_index:
     directory:
         - t

@@ -3,7 +3,7 @@ use strict;
 use warnings;
 no warnings 'once';
 
-our $VERSION = 0.30;
+our $VERSION = 0.31;
 
 use Data::ParseBinary::Core;
 use Data::ParseBinary::Adapters;
@@ -20,20 +20,15 @@ our $DefaultPass = Data::ParseBinary::NullConstruct->create();
 $Data::ParseBinary::BaseConstruct::DefaultPass = $DefaultPass;
 our $print_debug_info = undef;
 
-my $support_64_bit_int = 1;
-#if ( ( not ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) ) or
-#     ( not ( $Config{longsize} >= 8 )) ) {
-#    $support_64_bit_int = 0;
-#    require Math::BigInt;
-#}
-
-if ( ( not ( (defined $Config{use64bitint}) and ( $Config{use64bitint} eq 'define')) ) or
-     ( not ( $Config{longsize} >= 8 )) or
-     ( not ( (defined $Config{uselongdouble}) and ( $Config{uselongdouble} eq 'define')) ) or
-     ( not ( (defined $Config{use64bitall}) and ( $Config{use64bitall} eq 'define')))) {
+my $support_64_bit_int;
+eval { my $x = pack "Q", 5 };
+if ( $@ ) {
     $support_64_bit_int = 0;
     require Math::BigInt;
+} else {
+	$support_64_bit_int = 1
 }
+$@ = '';
 
 sub UBInt16 { return Data::ParseBinary::Primitive->create($_[0], 2, "n") }
 sub UBInt32 { return Data::ParseBinary::Primitive->create($_[0], 4, "N") }

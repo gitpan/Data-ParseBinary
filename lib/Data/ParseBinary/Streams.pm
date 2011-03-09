@@ -51,11 +51,16 @@ sub CreateStreamReader {
     # @params > 1
     my $source = pop @params;
     while (@params) {
+		my $opts = undef;
         my $type = pop @params;
+		if ( defined( ref $type ) and @params and ( $params[-1] eq ' Opts' ) ) {
+			$opts = $type;
+			$type = pop @params;
+		}
         if (not exists $_streamTypes{$type}) {
             die "CreateStreamReader: Unrecognized type: $type";
         }
-        $source = $_streamTypes{$type}->new($source);
+        $source = $_streamTypes{$type}->new($source, $opts);
     }
     return $source;
 }
